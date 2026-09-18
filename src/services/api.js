@@ -30,12 +30,12 @@ const request = async (endpoint, method = 'GET', data = null) => {
     url.searchParams.append('endpoint', endpoint);
     
     const options = {
-      method: 'POST', // Google Apps Script typically expects POST for complex data, using URL params for routing
+      method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'text/plain;charset=utf-8',
       },
       body: JSON.stringify({
-        method, // Pass actual REST method inside body
+        method,
         payload: data
       })
     };

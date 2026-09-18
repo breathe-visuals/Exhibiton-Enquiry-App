@@ -57,7 +57,7 @@ function doGet(e) {
 }
 
 // Ensure CORS headers (Apps Script does this automatically for ContentService, but good practice)
-function handleOptions(e) {
+function doOptions(e) {
   return ContentService.createTextOutput('')
     .setMimeType(ContentService.MimeType.TEXT);
 }
