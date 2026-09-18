@@ -24,7 +24,8 @@ function App() {
         const data = await api.getEnquiries();
         setEnquiries(data);
       } catch (err) {
-        setError('Failed to load enquiries. Please try again.');
+        console.error(err);
+        setError(err.message || 'Failed to load enquiries. Please try again.');
       } finally {
         setIsLoading(false);
       }

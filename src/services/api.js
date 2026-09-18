@@ -55,6 +55,12 @@ const request = async (endpoint, method = 'GET', data = null) => {
     }
     
     const result = await response.json();
+    
+    // Google Apps Script returned a caught error
+    if (result && result.success === false) {
+      throw new Error(result.error || "Unknown backend error");
+    }
+    
     return result;
   } catch (error) {
     console.error("API Request failed:", error);
