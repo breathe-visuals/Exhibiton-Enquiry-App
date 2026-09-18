@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Camera, Image as ImageIcon, Check, X, Plus } from 'lucide-react';
 import Header from '../components/Header';
 import AddProductModal from './AddProductModal';
-import { saveEnquiry } from '../utils/mockData';
+import * as api from '../services/api';
 import { compressImage } from '../utils/imageUtils';
 
 const NewEnquiry = ({ navigateTo, setIsDirty }) => {
@@ -19,6 +19,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
   const [products, setProducts] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Clear dirty state if we unmount without saving (App.jsx handles the confirm, so if we unmount it's fine)
   useEffect(() => {
@@ -62,21 +63,48 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
     }
   };
 
-  const handleSaveEnquiry = () => {
+  const handleSaveEnquiry = async () => {
     if (!formData.customer_name || !formData.mobile) {
       alert("Customer Name and Mobile Number are required.");
       return;
     }
     
-    const enquiry = {
-      ...formData,
-      products,
-      created_by: 'Current User' // Placeholder for auth
-    };
+    setIsSaving(true);
     
-    saveEnquiry(enquiry);
-    setIsDirty(false); // Clear dirty state before navigation
-    navigateTo('dashboard');
+    try {
+      // If we are actually connecting to backend, we would upload images here first
+      // Let's do it for business card as an example:
+      let finalCardUrl = formData.business_card_url;
+      if (finalCardUrl && finalCardUrl.startsWith('data:image')) {
+        finalCardUrl = await api.uploadImage(finalCardUrl, 'business_card');
+      }
+
+      // Upload product photos
+      const updatedProducts = await Promise.all(products.map(async p => {
+        let photoUrl = p.photo_url;
+        if (photoUrl && photoUrl.startsWith('data:image')) {
+          photoUrl = await api.uploadImage(photoUrl, 'product');
+        }
+        return { ...p, photo_url: photoUrl };
+      }));
+
+      const enquiry = {
+        ...formData,
+        business_card_url: finalCardUrl,
+        products: updatedProducts,
+        created_by: 'Current User' // Placeholder for auth
+      };
+      
+      await api.createEnquiry(enquiry);
+      
+      setIsDirty(false); // Clear dirty state before navigation
+      navigateTo('dashboard');
+    } catch (error) {
+      console.error(error);
+      alert("Failed to save enquiry. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -187,8 +215,14 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
       </div>
 
       <div style={styles.bottomBar}>
-        <button className="btn btn-primary btn-block" onClick={handleSaveEnquiry}>
-          <Check size={20} /> Save Enquiry
+        <button 
+          className="btn btn-primary btn-block" 
+          onClick={handleSaveEnquiry}
+          disabled={isSaving}
+          style={{ opacity: isSaving ? 0.7 : 1 }}
+        >
+          {isSaving ? <div className="spinner" style={{width: 20, height: 20, borderLeftColor: 'white'}}></div> : <Check size={20} />} 
+          {isSaving ? 'Saving...' : 'Save Enquiry'}
         </button>
       </div>
 

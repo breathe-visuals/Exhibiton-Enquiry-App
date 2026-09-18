@@ -5,17 +5,31 @@ import NewEnquiry from './screens/NewEnquiry';
 import EnquiryDetails from './screens/EnquiryDetails';
 import Settings from './screens/Settings';
 import BottomNav from './components/BottomNav';
-import { getEnquiries } from './utils/mockData';
+import * as api from './services/api';
 
 function App() {
   const [currentRoute, setCurrentRoute] = useState('dashboard');
   const [selectedEnquiryId, setSelectedEnquiryId] = useState(null);
   const [enquiries, setEnquiries] = useState([]);
   const [isDirty, setIsDirty] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Load initial data
   useEffect(() => {
-    setEnquiries(getEnquiries());
+    const fetchEnquiries = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const data = await api.getEnquiries();
+        setEnquiries(data);
+      } catch (err) {
+        setError('Failed to load enquiries. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchEnquiries();
   }, [currentRoute]); // Refresh when route changes to catch new saves
 
   const navigateTo = (route, params = {}) => {
@@ -34,6 +48,24 @@ function App() {
   };
 
   const renderScreen = () => {
+    if (isLoading && currentRoute !== 'new-enquiry' && currentRoute !== 'settings') {
+      return (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column', color: 'var(--text-muted)' }}>
+          <div className="spinner"></div>
+          <p>Loading...</p>
+        </div>
+      );
+    }
+
+    if (error && currentRoute !== 'new-enquiry' && currentRoute !== 'settings') {
+      return (
+        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--danger-color)' }}>
+          <p>{error}</p>
+          <button className="btn btn-secondary" onClick={() => setCurrentRoute(currentRoute)}>Retry</button>
+        </div>
+      );
+    }
+
     switch (currentRoute) {
       case 'dashboard':
         return <Dashboard navigateTo={navigateTo} enquiries={enquiries} />;

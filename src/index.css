@@ -158,3 +158,18 @@ p { color: var(--text-muted); }
 .text-xs { font-size: 0.75rem; }
 .font-bold { font-weight: bold; }
 .text-primary { color: var(--primary-color); }
+
+/* Spinner */
+.spinner {
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border-left-color: var(--primary-color);
+  animation: spin 1s ease infinite;
+  display: inline-block;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

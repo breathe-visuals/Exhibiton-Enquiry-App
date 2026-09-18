@@ -1,17 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { getEnquiryById } from '../utils/mockData';
+import * as api from '../services/api';
 import Header from '../components/Header';
 
 const EnquiryDetails = ({ navigateTo, enquiryId }) => {
   const [enquiry, setEnquiry] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const data = getEnquiryById(enquiryId);
-    setEnquiry(data);
+    const fetchEnquiry = async () => {
+      try {
+        const data = await api.getEnquiryById(enquiryId);
+        setEnquiry(data);
+      } catch (err) {
+        setError('Failed to load details.');
+      }
+    };
+    fetchEnquiry();
   }, [enquiryId]);
 
+  if (error) return <div style={{padding: '20px', textAlign: 'center'}}>{error}</div>;
   if (!enquiry) {
-    return <div>Loading...</div>;
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column' }}>
+        <div className="spinner"></div>
+      </div>
+    );
   }
 
   return (
