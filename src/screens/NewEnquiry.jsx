@@ -72,26 +72,9 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
     setIsSaving(true);
     
     try {
-      // If we are actually connecting to backend, we would upload images here first
-      // Let's do it for business card as an example:
-      let finalCardUrl = formData.business_card_url;
-      if (finalCardUrl && finalCardUrl.startsWith('data:image')) {
-        finalCardUrl = await api.uploadImage(finalCardUrl, 'business_card');
-      }
-
-      // Upload product photos
-      const updatedProducts = await Promise.all(products.map(async p => {
-        let photoUrl = p.photo_url;
-        if (photoUrl && photoUrl.startsWith('data:image')) {
-          photoUrl = await api.uploadImage(photoUrl, 'product');
-        }
-        return { ...p, photo_url: photoUrl };
-      }));
-
       const enquiry = {
         ...formData,
-        business_card_url: finalCardUrl,
-        products: updatedProducts,
+        products: products,
         created_by: 'Current User' // Placeholder for auth
       };
       

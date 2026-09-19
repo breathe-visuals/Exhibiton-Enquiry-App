@@ -87,8 +87,7 @@ function handleUpload(payload) {
 }
 
 // --- Database Logic ---
-function getSheet(sheetName) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+function getSheet(ss, sheetName) {
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     // Auto-create if it doesn't exist
@@ -102,11 +101,40 @@ function getSheet(sheetName) {
   return sheet;
 }
 
+function uploadAndGetUrl(base64Str, type) {
+  if (!base64Str || !base64Str.startsWith('data:image')) return base64Str;
+  
+  const folderId = type === 'business_card' ? BUSINESS_CARD_FOLDER_ID : PRODUCT_IMAGE_FOLDER_ID;
+  const folder = DriveApp.getFolderById(folderId);
+
+  const splitBase = base64Str.split(',');
+  const contentType = splitBase[0].split(';')[0].split(':')[1];
+  const base64Data = splitBase[1];
+
+  const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), contentType, `image_${new Date().getTime()}`);
+  const savedFile = folder.createFile(blob);
+  savedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  
+  return savedFile.getDownloadUrl().replace('&export=download', ''); 
+}
+
 function createEnquiry(enquiry) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   
+  if (enquiry.business_card_url && enquiry.business_card_url.startsWith('data:image')) {
+    enquiry.business_card_url = uploadAndGetUrl(enquiry.business_card_url, 'business_card');
+  }
+  
+  if (enquiry.products && enquiry.products.length > 0) {
+    enquiry.products.forEach(p => {
+      if (p.photo_url && p.photo_url.startsWith('data:image')) {
+        p.photo_url = uploadAndGetUrl(p.photo_url, 'product');
+      }
+    });
+  }
+  
   // Save to Enquiries sheet
-  const enquiriesSheet = getSheet('Enquiries');
+  const enquiriesSheet = getSheet(ss, 'Enquiries');
   const now = new Date().toISOString();
   const enquiryId = enquiry.enquiry_id || `ENQ-${new Date().getTime()}`;
   
@@ -126,29 +154,29 @@ function createEnquiry(enquiry) {
   
   // Save products to Products sheet
   if (enquiry.products && enquiry.products.length > 0) {
-    const productsSheet = getSheet('Products');
-    enquiry.products.forEach(p => {
-      productsSheet.appendRow([
-        p.product_id || `PRD-${new Date().getTime()}-${Math.floor(Math.random()*1000)}`,
-        enquiryId,
-        p.photo_url || '',
-        p.description || '',
-        p.quantity || '',
-        p.unit || '',
-        p.weight || '',
-        p.purity_material || '',
-        p.customer_requirement || '',
-        now
-      ]);
-    });
+    const productsSheet = getSheet(ss, 'Products');
+    const rows = enquiry.products.map(p => [
+      p.product_id || `PRD-${new Date().getTime()}-${Math.floor(Math.random()*1000)}`,
+      enquiryId,
+      p.photo_url || '',
+      p.description || '',
+      p.quantity || '',
+      p.unit || '',
+      p.weight || '',
+      p.purity_material || '',
+      p.customer_requirement || '',
+      now
+    ]);
+    productsSheet.getRange(productsSheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
   }
   
   return { success: true, enquiry_id: enquiryId };
 }
 
 function getEnquiries() {
-  const enquiriesSheet = getSheet('Enquiries');
-  const productsSheet = getSheet('Products');
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const enquiriesSheet = getSheet(ss, 'Enquiries');
+  const productsSheet = getSheet(ss, 'Products');
   
   const enquiriesData = getSheetDataAsObjects(enquiriesSheet);
   const productsData = getSheetDataAsObjects(productsSheet);
@@ -172,8 +200,9 @@ function getEnquiries() {
 }
 
 function getEnquiryById(enquiryId) {
-  const enquiriesSheet = getSheet('Enquiries');
-  const productsSheet = getSheet('Products');
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const enquiriesSheet = getSheet(ss, 'Enquiries');
+  const productsSheet = getSheet(ss, 'Products');
   
   const enquiriesData = getSheetDataAsObjects(enquiriesSheet);
   const enquiry = enquiriesData.find(e => e.enquiry_id === enquiryId);
