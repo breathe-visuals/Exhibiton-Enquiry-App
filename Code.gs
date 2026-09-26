@@ -93,7 +93,7 @@ function getSheet(ss, sheetName) {
     // Auto-create if it doesn't exist
     sheet = ss.insertSheet(sheetName);
     if (sheetName === 'Enquiries') {
-      sheet.appendRow(['enquiry_id', 'customer_name', 'mobile', 'business_name', 'address', 'business_card_url', 'general_notes', 'event_name', 'created_by', 'created_at', 'status']);
+      sheet.appendRow(['enquiry_id', 'customer_name', 'mobile', 'business_name', 'address', 'business_card_url', 'business_card_url_2', 'advance_amount', 'payment_mode', 'payment_mode_custom', 'general_notes', 'event_name', 'created_by', 'created_at', 'status']);
     } else if (sheetName === 'Products') {
       sheet.appendRow(['product_id', 'enquiry_id', 'photo_url', 'description', 'quantity', 'unit', 'weight', 'purity_material', 'customer_requirement', 'created_at']);
     }
@@ -102,20 +102,28 @@ function getSheet(ss, sheetName) {
 }
 
 function uploadAndGetUrl(base64Str, type) {
-  if (!base64Str || !base64Str.startsWith('data:image')) return base64Str;
-  
-  const folderId = type === 'business_card' ? BUSINESS_CARD_FOLDER_ID : PRODUCT_IMAGE_FOLDER_ID;
-  const folder = DriveApp.getFolderById(folderId);
+  try {
+    if (!base64Str || !base64Str.startsWith('data:image')) return base64Str;
+    
+    const folderId = type === 'business_card' ? BUSINESS_CARD_FOLDER_ID : PRODUCT_IMAGE_FOLDER_ID;
+    const folder = DriveApp.getFolderById(folderId);
 
-  const splitBase = base64Str.split(',');
-  const contentType = splitBase[0].split(';')[0].split(':')[1];
-  const base64Data = splitBase[1];
+    const splitBase = base64Str.split(',');
+    const contentType = splitBase[0].split(';')[0].split(':')[1];
+    const base64Data = splitBase[1];
+    
+    let ext = contentType.split('/')[1] || 'jpg';
+    if (ext === 'jpeg') ext = 'jpg';
 
-  const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), contentType, `image_${new Date().getTime()}`);
-  const savedFile = folder.createFile(blob);
-  savedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  
-  return savedFile.getDownloadUrl().replace('&export=download', ''); 
+    const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), contentType, `image_${new Date().getTime()}.${ext}`);
+    const savedFile = folder.createFile(blob);
+    
+    // Return a reliable thumbnail URL for embedding in <img> tags.
+    // Standard Drive URLs are blocked by modern browsers for cross-site embedding.
+    return `https://drive.google.com/thumbnail?id=${savedFile.getId()}&sz=w1000`; 
+  } catch (err) {
+    return "ERROR: " + err.message;
+  }
 }
 
 function createEnquiry(enquiry) {
@@ -123,6 +131,9 @@ function createEnquiry(enquiry) {
   
   if (enquiry.business_card_url && enquiry.business_card_url.startsWith('data:image')) {
     enquiry.business_card_url = uploadAndGetUrl(enquiry.business_card_url, 'business_card');
+  }
+  if (enquiry.business_card_url_2 && enquiry.business_card_url_2.startsWith('data:image')) {
+    enquiry.business_card_url_2 = uploadAndGetUrl(enquiry.business_card_url_2, 'business_card');
   }
   
   if (enquiry.products && enquiry.products.length > 0) {
@@ -145,6 +156,10 @@ function createEnquiry(enquiry) {
     enquiry.business_name || '',
     enquiry.address || '',
     enquiry.business_card_url || '',
+    enquiry.business_card_url_2 || '',
+    enquiry.advance_amount || '',
+    enquiry.payment_mode || '',
+    enquiry.payment_mode_custom || '',
     enquiry.general_notes || '',
     enquiry.event_name || '',
     enquiry.created_by || 'Unknown',

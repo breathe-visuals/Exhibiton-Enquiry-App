@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Image as ImageIcon, Check, X, Plus } from 'lucide-react';
+import { Camera, Image as ImageIcon, Check, X, Plus, ZoomIn } from 'lucide-react';
 import Header from '../components/Header';
 import AddProductModal from './AddProductModal';
+import ImageLightbox from '../components/ImageLightbox';
 import * as api from '../services/api';
 import { compressImage } from '../utils/imageUtils';
+
+const PAYMENT_MODES = ['Cash', 'RTGS', 'NEFT', 'UPI', 'Cheque', 'Card', 'Other'];
 
 const NewEnquiry = ({ navigateTo, setIsDirty }) => {
   const [formData, setFormData] = useState({
@@ -14,14 +17,17 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
     event_name: 'Gems & Jewellery Expo 2026',
     general_notes: '',
     business_card_url: null,
+    business_card_url_2: null,
+    advance_amount: '',
+    payment_mode: '',
   });
 
   const [products, setProducts] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
 
-  // Clear dirty state if we unmount without saving (App.jsx handles the confirm, so if we unmount it's fine)
   useEffect(() => {
     return () => setIsDirty(false);
   }, [setIsDirty]);
@@ -32,17 +38,19 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
     setIsDirty(true);
   };
 
-  const handleCardCapture = async (e) => {
+  const handleCardCapture = async (e, slot) => {
     const file = e.target.files[0];
     if (file) {
       try {
         const compressedDataUrl = await compressImage(file);
-        setFormData(prev => ({ ...prev, business_card_url: compressedDataUrl }));
+        setFormData(prev => ({ ...prev, [slot]: compressedDataUrl }));
         setIsDirty(true);
       } catch (err) {
-        alert("Failed to process image.");
+        alert('Failed to process image.');
       }
     }
+    // Reset input so same file can be re-selected
+    e.target.value = '';
   };
 
   const handleSaveProduct = (product) => {
@@ -57,7 +65,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
   };
 
   const deleteProduct = (id) => {
-    if(window.confirm("Are you sure you want to remove this product?")) {
+    if (window.confirm('Are you sure you want to remove this product?')) {
       setProducts(products.filter(p => p.product_id !== id));
       setIsDirty(true);
     }
@@ -65,55 +73,114 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
 
   const handleSaveEnquiry = async () => {
     if (!formData.customer_name || !formData.mobile) {
-      alert("Customer Name and Mobile Number are required.");
+      alert('Customer Name and Mobile Number are required.');
       return;
     }
-    
+
     setIsSaving(true);
-    
+
     try {
       const enquiry = {
         ...formData,
-        products: products,
-        created_by: 'Current User' // Placeholder for auth
+        products,
+        created_by: 'Current User',
       };
-      
+
       await api.createEnquiry(enquiry);
-      
-      setIsDirty(false); // Clear dirty state before navigation
-      navigateTo('dashboard');
+
+      setIsDirty(false);
+      navigateTo('dashboard', { refresh: true });
     } catch (error) {
       console.error(error);
-      alert("Failed to save enquiry. Please try again.");
+      alert('Failed to save enquiry. Please try again.');
     } finally {
       setIsSaving(false);
     }
   };
 
+  const renderCardSlot = (slotKey, label) => {
+    const url = formData[slotKey];
+    return (
+      <div style={styles.cardSlot}>
+        <div style={styles.cardSlotLabel}>{label}</div>
+        {url ? (
+          <div style={styles.cardPreviewContainer}>
+            <div style={{ position: 'relative' }}>
+              <img
+                src={url}
+                alt={label}
+                style={styles.cardPreview}
+              />
+              {/* Tap-to-expand overlay */}
+              <button
+                style={styles.zoomBtn}
+                onClick={() => setLightboxSrc(url)}
+                aria-label="Expand image"
+              >
+                <ZoomIn size={18} color="white" />
+              </button>
+            </div>
+            <button
+              className="btn btn-secondary mt-sm"
+              onClick={() => setFormData(p => ({ ...p, [slotKey]: null }))}
+            >
+              <X size={16} /> Remove
+            </button>
+          </div>
+        ) : (
+          <label style={styles.uploadBtn}>
+            <Camera size={24} />
+            <span>Capture {label}</span>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style={{ display: 'none' }}
+              onChange={(e) => handleCardCapture(e, slotKey)}
+            />
+          </label>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div style={{ paddingBottom: '80px' }}>
-      <Header 
-        title="New Enquiry" 
-        showBack={true} 
-        onBack={() => navigateTo('dashboard')} 
+      <Header
+        title="New Enquiry"
+        showBack={true}
+        onBack={() => navigateTo('dashboard')}
       />
 
+      {/* Visitor Details */}
       <div className="card">
         <h3 style={styles.sectionTitle}>Visitor Details</h3>
-        
+
         <div className="form-group">
           <label className="form-label">Customer Name *</label>
           <input type="text" className="form-input" name="customer_name" value={formData.customer_name} onChange={handleChange} />
         </div>
-        
+
         <div className="form-group">
           <label className="form-label">Mobile Number *</label>
           <input type="tel" className="form-input" name="mobile" value={formData.mobile} onChange={handleChange} />
         </div>
-        
+
         <div className="form-group">
           <label className="form-label">Business Name (optional)</label>
           <input type="text" className="form-input" name="business_name" value={formData.business_name} onChange={handleChange} />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Address (optional)</label>
+          <textarea
+            className="form-textarea"
+            name="address"
+            value={formData.address}
+            onChange={handleChange}
+            rows="2"
+            placeholder="City, State, Country..."
+          />
         </div>
 
         <div className="form-group">
@@ -122,29 +189,68 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
         </div>
       </div>
 
+      {/* Business Cards — two slots */}
       <div className="card">
         <h3 style={styles.sectionTitle}>Business Card</h3>
-        {formData.business_card_url ? (
-          <div style={styles.cardPreviewContainer}>
-            <img src={formData.business_card_url} alt="Business Card" style={styles.cardPreview} />
-            <button className="btn btn-secondary mt-sm" onClick={() => setFormData(p => ({...p, business_card_url: null}))}>
-              Remove Card
-            </button>
+        <div style={styles.twoCardGrid}>
+          {renderCardSlot('business_card_url', 'Card Front')}
+          {renderCardSlot('business_card_url_2', 'Card Back')}
+        </div>
+      </div>
+
+      {/* Advance Payment */}
+      <div className="card">
+        <h3 style={styles.sectionTitle}>Advance Payment</h3>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+            <label className="form-label">Advance Amount (₹)</label>
+            <input
+              type="number"
+              className="form-input"
+              name="advance_amount"
+              value={formData.advance_amount}
+              onChange={handleChange}
+              placeholder="0"
+              min="0"
+            />
           </div>
-        ) : (
-          <label style={styles.uploadBtn}>
-            <Camera size={24} />
-            <span>Capture Business Card</span>
-            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleCardCapture} />
-          </label>
+          <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+            <label className="form-label">Payment Mode</label>
+            <select
+              className="form-select"
+              name="payment_mode"
+              value={formData.payment_mode}
+              onChange={handleChange}
+            >
+              <option value="">Select...</option>
+              {PAYMENT_MODES.map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {/* Free-text override */}
+        {formData.payment_mode === 'Other' && (
+          <div className="form-group" style={{ marginTop: '12px' }}>
+            <label className="form-label">Specify Payment Mode</label>
+            <input
+              type="text"
+              className="form-input"
+              name="payment_mode_custom"
+              value={formData.payment_mode_custom || ''}
+              onChange={handleChange}
+              placeholder="e.g. DD, Wire Transfer..."
+            />
+          </div>
         )}
       </div>
 
+      {/* Products */}
       <div className="card" style={{ backgroundColor: 'transparent', boxShadow: 'none', padding: 0 }}>
         <div className="flex justify-between items-center mb-md">
           <h3 style={styles.sectionTitle}>Products Interested</h3>
-          <button 
-            className="btn btn-secondary" 
+          <button
+            className="btn btn-secondary"
             style={{ padding: '6px 12px', fontSize: '0.85rem' }}
             onClick={() => { setEditingProduct(null); setIsModalOpen(true); }}
           >
@@ -156,8 +262,8 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
           <div style={styles.emptyProducts}>
             <ImageIcon size={48} color="var(--border-color)" />
             <p style={{ margin: '8px 0', color: 'var(--text-muted)' }}>No products added yet.</p>
-            <button 
-              className="btn btn-primary" 
+            <button
+              className="btn btn-primary"
               style={styles.largeAddBtn}
               onClick={() => { setEditingProduct(null); setIsModalOpen(true); }}
             >
@@ -168,7 +274,16 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {products.map(p => (
               <div key={p.product_id} style={styles.productCard}>
-                <img src={p.photo_url} alt="Product" style={styles.productImg} loading="lazy" />
+                <div style={{ position: 'relative' }}>
+                  <img src={p.photo_url} alt="Product" style={styles.productImg} loading="lazy" />
+                  <button
+                    style={styles.productZoomBtn}
+                    onClick={() => setLightboxSrc(p.photo_url)}
+                    aria-label="View product photo"
+                  >
+                    <ZoomIn size={14} color="white" />
+                  </button>
+                </div>
                 <div style={styles.productInfo}>
                   <div style={styles.productTitle}>{p.description}</div>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
@@ -176,7 +291,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
                   </div>
                   <div style={styles.productActions}>
                     <button style={styles.actionBtn} onClick={() => { setEditingProduct(p); setIsModalOpen(true); }}>Edit</button>
-                    <button style={{...styles.actionBtn, color: 'var(--danger-color)'}} onClick={() => deleteProduct(p.product_id)}>Remove</button>
+                    <button style={{ ...styles.actionBtn, color: 'var(--danger-color)' }} onClick={() => deleteProduct(p.product_id)}>Remove</button>
                   </div>
                 </div>
               </div>
@@ -185,36 +300,46 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
         )}
       </div>
 
+      {/* General Notes */}
       <div className="card mt-md">
         <h3 style={styles.sectionTitle}>General Notes</h3>
-        <textarea 
-          className="form-textarea" 
+        <textarea
+          className="form-textarea"
           name="general_notes"
           value={formData.general_notes}
           onChange={handleChange}
           rows="3"
           placeholder="Any additional discussion notes..."
-        ></textarea>
+        />
       </div>
 
+      {/* Save button */}
       <div style={styles.bottomBar}>
-        <button 
-          className="btn btn-primary btn-block" 
+        <button
+          className="btn btn-primary btn-block"
           onClick={handleSaveEnquiry}
           disabled={isSaving}
           style={{ opacity: isSaving ? 0.7 : 1 }}
         >
-          {isSaving ? <div className="spinner" style={{width: 20, height: 20, borderLeftColor: 'white'}}></div> : <Check size={20} />} 
+          {isSaving ? <div className="spinner" style={{ width: 20, height: 20, borderLeftColor: 'white' }} /> : <Check size={20} />}
           {isSaving ? 'Saving...' : 'Save Enquiry'}
         </button>
       </div>
 
       {isModalOpen && (
-        <AddProductModal 
-          isOpen={isModalOpen} 
-          onClose={() => setIsModalOpen(false)} 
+        <AddProductModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
           onSave={handleSaveProduct}
           editingProduct={editingProduct}
+        />
+      )}
+
+      {lightboxSrc && (
+        <ImageLightbox
+          src={lightboxSrc}
+          alt="Full screen preview"
+          onClose={() => setLightboxSrc(null)}
         />
       )}
     </div>
@@ -228,25 +353,39 @@ const styles = {
     color: 'var(--text-main)',
     fontWeight: '600',
   },
+  twoCardGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '12px',
+  },
+  cardSlot: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  cardSlotLabel: {
+    fontSize: '0.8rem',
+    fontWeight: '600',
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+  },
   uploadBtn: {
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '12px',
-    padding: '24px',
+    gap: '8px',
+    padding: '20px 12px',
     backgroundColor: '#f8fafc',
     border: '2px dashed var(--primary-color)',
     borderRadius: '12px',
     color: 'var(--primary-color)',
     cursor: 'pointer',
     fontWeight: '600',
-    fontSize: '1.1rem',
-  },
-  largeAddBtn: {
-    marginTop: '12px',
-    padding: '12px 24px',
-    borderRadius: '24px',
-    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
+    fontSize: '0.85rem',
+    textAlign: 'center',
+    minHeight: '110px',
   },
   cardPreviewContainer: {
     display: 'flex',
@@ -255,10 +394,31 @@ const styles = {
   },
   cardPreview: {
     width: '100%',
-    maxHeight: '200px',
+    maxHeight: '140px',
     objectFit: 'contain',
     borderRadius: '8px',
     border: '1px solid var(--border-color)',
+    cursor: 'zoom-in',
+  },
+  zoomBtn: {
+    position: 'absolute',
+    bottom: '6px',
+    right: '6px',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    border: 'none',
+    borderRadius: '6px',
+    width: '30px',
+    height: '30px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+  },
+  largeAddBtn: {
+    marginTop: '12px',
+    padding: '12px 24px',
+    borderRadius: '24px',
+    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
   },
   emptyProducts: {
     padding: '32px 16px',
@@ -284,6 +444,21 @@ const styles = {
     width: '100px',
     height: '100px',
     objectFit: 'cover',
+    cursor: 'zoom-in',
+  },
+  productZoomBtn: {
+    position: 'absolute',
+    bottom: '4px',
+    right: '4px',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    border: 'none',
+    borderRadius: '4px',
+    width: '24px',
+    height: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
   },
   productInfo: {
     padding: '12px',
@@ -322,7 +497,7 @@ const styles = {
     backgroundColor: 'white',
     borderTop: '1px solid var(--border-color)',
     zIndex: 90,
-  }
+  },
 };
 
 export default NewEnquiry;

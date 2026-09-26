@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Camera, X, Save, ChevronDown, ChevronUp } from 'lucide-react';
+import { Camera, X, Save, ChevronDown, ChevronUp, ZoomIn } from 'lucide-react';
 import { compressImage } from '../utils/imageUtils';
+import ImageLightbox from '../components/ImageLightbox';
 
 const AddProductModal = ({ isOpen, onClose, onSave, editingProduct }) => {
   const [product, setProduct] = useState(editingProduct || {
@@ -19,6 +20,7 @@ const AddProductModal = ({ isOpen, onClose, onSave, editingProduct }) => {
   const [preview, setPreview] = useState(product.photo_url || null);
   const [showDetails, setShowDetails] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   if (!isOpen) return null;
 
@@ -65,6 +67,7 @@ const AddProductModal = ({ isOpen, onClose, onSave, editingProduct }) => {
   };
 
   return (
+    <>
     <div style={styles.overlay}>
       <div style={styles.modal}>
         <div style={styles.header}>
@@ -76,12 +79,21 @@ const AddProductModal = ({ isOpen, onClose, onSave, editingProduct }) => {
           <div style={styles.photoContainer}>
             {preview ? (
               <div style={styles.previewWrapper}>
-                <img src={preview} alt="Product" style={styles.previewImg} />
+                <img src={preview} alt="Product" style={{ ...styles.previewImg, cursor: 'zoom-in' }} onClick={() => setLightboxOpen(true)} />
+                {/* Remove button */}
                 <button 
                   style={styles.removePhotoBtn}
                   onClick={() => { setPreview(null); setProduct(prev => ({ ...prev, photo_url: null })); }}
                 >
                   <X size={16} />
+                </button>
+                {/* Zoom button */}
+                <button
+                  style={{ ...styles.removePhotoBtn, right: '44px', backgroundColor: 'rgba(0,0,0,0.55)' }}
+                  onClick={() => setLightboxOpen(true)}
+                  aria-label="Expand photo"
+                >
+                  <ZoomIn size={14} color="white" />
                 </button>
               </div>
             ) : (
@@ -185,6 +197,15 @@ const AddProductModal = ({ isOpen, onClose, onSave, editingProduct }) => {
         </div>
       </div>
     </div>
+
+      {lightboxOpen && preview && (
+        <ImageLightbox
+          src={preview}
+          alt="Product photo"
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
+    </>
   );
 };
 

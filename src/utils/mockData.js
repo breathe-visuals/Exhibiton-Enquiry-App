@@ -22,6 +22,10 @@ export const saveEnquiry = (enquiry) => {
     const newEnquiry = {
       ...enquiry,
       enquiry_id: `ENQ-${Date.now()}`,
+      business_card_url_2: enquiry.business_card_url_2 || null,
+      advance_amount: enquiry.advance_amount || '',
+      payment_mode: enquiry.payment_mode || '',
+      payment_mode_custom: enquiry.payment_mode_custom || '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       status: 'New'

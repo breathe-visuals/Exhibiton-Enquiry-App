@@ -14,6 +14,7 @@ function App() {
   const [isDirty, setIsDirty] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Load initial data
   useEffect(() => {
@@ -31,7 +32,7 @@ function App() {
       }
     };
     fetchEnquiries();
-  }, [currentRoute]); // Refresh when route changes to catch new saves
+  }, [refreshKey]); // Only re-fetch when explicitly triggered (after save)
 
   const navigateTo = (route, params = {}) => {
     if (isDirty) {
@@ -46,6 +47,10 @@ function App() {
       setSelectedEnquiryId(params.enquiryId);
     }
     setCurrentRoute(route);
+    // After saving a new enquiry and going back, refresh the list
+    if (params.refresh) {
+      setRefreshKey(k => k + 1);
+    }
   };
 
   const renderScreen = () => {

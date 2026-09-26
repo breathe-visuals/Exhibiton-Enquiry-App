@@ -6,8 +6,8 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA === 'true';
 const request = async (endpoint, method = 'GET', data = null) => {
   if (USE_MOCK) {
     console.log(`[Mock API] ${method} ${endpoint}`, data);
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Simulate minimal network delay
+    await new Promise(resolve => setTimeout(resolve, 50));
     
     // Simple mock router
     if (endpoint === 'enquiries' && method === 'GET') {
