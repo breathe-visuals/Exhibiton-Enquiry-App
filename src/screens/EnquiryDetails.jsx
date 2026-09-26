@@ -13,39 +13,41 @@ import ImageLightbox from '../components/ImageLightbox';
 const exportToPDF = (enquiry) => {
   const fmt = (v) => (v ? String(v) : '—');
 
-  /* ── Product images in a 4-column grid ── */
   const products = enquiry.products || [];
 
-  const productPhotoGrid = products.length > 0 ? `
+  /*
+   * Each product is ONE box:
+   *   ┌─────────────────────────────────────────┐
+   *   │  #1  Gold Bangles 22k                   │
+   *   │  ┌──────────┐  Description │ Gold…      │
+   *   │  │  [photo] │  Quantity    │ 2 pcs       │
+   *   │  │          │  Weight      │ 15g         │
+   *   │  └──────────┘  Requirement │ …           │
+   *   └─────────────────────────────────────────┘
+   *
+   * Laid out in a 4-column responsive grid (2 per row when printing narrow).
+   * No separate photo page + details page — everything is together.
+   */
+  const productBoxes = products.length > 0 ? `
   <section>
-    <div class="section-title">Product Photos (${products.length})</div>
-    <div class="photo-grid">
+    <div class="section-title">Products Interested (${products.length})</div>
+    <div class="product-grid">
       ${products.map((p, i) => `
-        <div class="photo-cell">
+        <div class="product-box">
+          <div class="product-num">#${i + 1}</div>
+          <div class="product-name">${fmt(p.description)}</div>
           ${p.photo_url
-            ? `<img src="${p.photo_url}" class="photo-img" alt="Product ${i + 1}" />`
-            : `<div class="photo-placeholder">${i + 1}</div>`}
-          <div class="photo-caption">${fmt(p.description)}</div>
+            ? `<img src="${p.photo_url}" class="product-photo" alt="Product ${i + 1}" />`
+            : `<div class="product-no-photo">No Photo</div>`}
+          <table class="detail-table">
+            <tr><td class="dl">Qty</td><td>${fmt(p.quantity)} ${fmt(p.unit)}</td></tr>
+            ${p.weight          ? `<tr><td class="dl">Weight</td><td>${p.weight}</td></tr>` : ''}
+            ${p.purity_material ? `<tr><td class="dl">Purity</td><td>${p.purity_material}</td></tr>` : ''}
+            ${p.customer_requirement ? `<tr><td class="dl">Req.</td><td>${p.customer_requirement}</td></tr>` : ''}
+          </table>
         </div>
       `).join('')}
     </div>
-  </section>` : '';
-
-  /* ── Product details list ── */
-  const productDetailsList = products.length > 0 ? `
-  <section style="page-break-before: always;">
-    <div class="section-title">Product Details</div>
-    ${products.map((p, i) => `
-      <div class="product-detail-block">
-        <div class="product-num">Product ${i + 1} — ${fmt(p.description)}</div>
-        <table class="info-table">
-          <tr><td class="label">Quantity</td><td>${fmt(p.quantity)} ${fmt(p.unit)}</td></tr>
-          ${p.weight ? `<tr><td class="label">Weight</td><td>${p.weight}</td></tr>` : ''}
-          ${p.purity_material ? `<tr><td class="label">Purity / Material</td><td>${p.purity_material}</td></tr>` : ''}
-          ${p.customer_requirement ? `<tr><td class="label">Requirement</td><td>${p.customer_requirement}</td></tr>` : ''}
-        </table>
-      </div>
-    `).join('')}
   </section>` : '';
 
   const cardImages = [enquiry.business_card_url, enquiry.business_card_url_2]
@@ -66,85 +68,110 @@ const exportToPDF = (enquiry) => {
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Inter, sans-serif; font-size: 13px; color: #0f172a; background: #fff; padding: 28px 32px; }
 
-    /* ── Header ── */
     h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
     .subtitle { color: #64748b; font-size: 11px; margin-bottom: 20px; line-height: 1.7; }
     .badge { display: inline-block; background: #e0e7ff; color: #2563eb; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; margin-left: 8px; vertical-align: middle; }
 
-    /* ── Section ── */
     section { margin-bottom: 24px; }
-    .section-title { font-size: 12px; font-weight: 700; color: #2563eb; border-bottom: 2px solid #e0e7ff; padding-bottom: 5px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.07em; }
+    .section-title { font-size: 12px; font-weight: 700; color: #2563eb; border-bottom: 2px solid #e0e7ff; padding-bottom: 5px; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.07em; }
 
-    /* ── Info table ── */
     .info-table { width: 100%; border-collapse: collapse; }
     .info-table td { padding: 5px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
     .info-table .label { color: #64748b; font-weight: 600; width: 36%; white-space: nowrap; }
 
-    /* ── Business cards ── */
     .cards-row { display: flex; gap: 20px; flex-wrap: wrap; }
     .card-cell { display: flex; flex-direction: column; gap: 4px; }
     .card-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
     .card-img { max-width: 240px; max-height: 140px; border-radius: 6px; border: 1px solid #e2e8f0; object-fit: contain; display: block; }
 
-    /* ── Advance payment ── */
     .advance-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 20px; display: flex; gap: 32px; }
     .advance-item .alabel { color: #64748b; font-size: 10px; font-weight: 600; text-transform: uppercase; margin-bottom: 3px; }
     .advance-item .avalue { font-size: 18px; font-weight: 700; color: #15803d; }
 
-    /* ── 4-column product photo grid ── */
-    .photo-grid {
+    /* ── 4-column product grid – each box has photo + details together ── */
+    .product-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
+      gap: 12px;
     }
-    .photo-cell {
+
+    /* One unified product box */
+    .product-box {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      overflow: hidden;
+      break-inside: avoid;
       display: flex;
       flex-direction: column;
-      gap: 4px;
-      break-inside: avoid;
     }
-    .photo-img {
+
+    .product-num {
+      font-size: 10px;
+      font-weight: 700;
+      color: #fff;
+      background: #2563eb;
+      padding: 3px 8px;
+    }
+
+    .product-name {
+      font-size: 11px;
+      font-weight: 700;
+      color: #0f172a;
+      padding: 6px 8px 4px;
+      border-bottom: 1px solid #f1f5f9;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Full image, no crop */
+    .product-photo {
       width: 100%;
       aspect-ratio: 1 / 1;
-      object-fit: contain;       /* full image, no crop */
+      object-fit: contain;
       background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
+      border-bottom: 1px solid #e2e8f0;
       display: block;
     }
-    .photo-placeholder {
+
+    .product-no-photo {
       width: 100%;
       aspect-ratio: 1 / 1;
       background: #f1f5f9;
-      border: 1px dashed #cbd5e1;
-      border-radius: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
       color: #94a3b8;
-      font-size: 18px;
-      font-weight: 700;
+      font-size: 11px;
+      border-bottom: 1px solid #e2e8f0;
     }
-    .photo-caption {
+
+    /* Details table inside the box */
+    .detail-table {
+      width: 100%;
+      border-collapse: collapse;
+      flex: 1;
+    }
+    .detail-table td {
+      padding: 4px 7px;
+      border-bottom: 1px solid #f8fafc;
       font-size: 10px;
+      vertical-align: top;
+    }
+    .detail-table .dl {
       color: #64748b;
-      text-align: center;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      font-weight: 600;
       white-space: nowrap;
+      width: 38%;
     }
 
-    /* ── Product detail blocks ── */
-    .product-detail-block { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 10px; break-inside: avoid; }
-    .product-num { font-weight: 700; color: #2563eb; font-size: 12px; margin-bottom: 8px; }
-
-    /* ── Footer ── */
     footer { margin-top: 36px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 12px; }
 
-    /* ── Print overrides ── */
     @media print {
       body { padding: 12px 16px; }
       @page { margin: 14mm 12mm; }
+      /* On narrow print: 2 columns */
+      .product-grid { grid-template-columns: repeat(4, 1fr); }
     }
   </style>
 </head>
@@ -157,7 +184,6 @@ const exportToPDF = (enquiry) => {
     <strong>Event:</strong> ${fmt(enquiry.event_name)}
   </div>
 
-  <!-- Visitor info -->
   <section>
     <div class="section-title">Visitor Information</div>
     <table class="info-table">
@@ -167,7 +193,6 @@ const exportToPDF = (enquiry) => {
     </table>
   </section>
 
-  <!-- Advance payment -->
   ${(enquiry.advance_amount || enquiry.payment_mode) ? `
   <section>
     <div class="section-title">Advance Payment</div>
@@ -177,32 +202,25 @@ const exportToPDF = (enquiry) => {
     </div>
   </section>` : ''}
 
-  <!-- Business card(s) -->
   ${cardImages ? `
   <section>
     <div class="section-title">Business Card</div>
     <div class="cards-row">${cardImages}</div>
   </section>` : ''}
 
-  <!-- Notes -->
   ${enquiry.general_notes ? `
   <section>
     <div class="section-title">Notes</div>
-    <p style="line-height:1.6; font-size:13px">${enquiry.general_notes}</p>
+    <p style="line-height:1.6">${enquiry.general_notes}</p>
   </section>` : ''}
 
-  <!-- Product photo grid (4 per row, full image) -->
-  ${productPhotoGrid}
-
-  <!-- Product details (new page) -->
-  ${productDetailsList}
+  ${productBoxes}
 
   <footer>
     Generated by Exhibition Enquiry App &nbsp;•&nbsp; ${new Date().toLocaleString()}
   </footer>
 
   <script>
-    // Wait for images to load before printing
     window.addEventListener('load', () => { window.print(); });
   </script>
 </body>

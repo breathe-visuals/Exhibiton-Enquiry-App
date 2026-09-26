@@ -257,8 +257,31 @@ function getSheetDataAsObjects(sheet) {
 // ─── Delete a single enquiry and all its products ───
 function deleteEnquiry(enquiryId) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  
+  // Collect all image URLs before deleting rows
+  const enquiriesSheet = getSheet(ss, 'Enquiries');
+  const productsSheet  = getSheet(ss, 'Products');
+  const enquiriesData  = getSheetDataAsObjects(enquiriesSheet);
+  const productsData   = getSheetDataAsObjects(productsSheet);
+  
+  const enquiry = enquiriesData.find(e => String(e.enquiry_id) === String(enquiryId));
+  const enquiryProducts = productsData.filter(p => String(p.enquiry_id) === String(enquiryId));
+  
+  // Collect image URLs to delete from Drive
+  const imageUrls = [];
+  if (enquiry) {
+    if (enquiry.business_card_url)   imageUrls.push(enquiry.business_card_url);
+    if (enquiry.business_card_url_2) imageUrls.push(enquiry.business_card_url_2);
+  }
+  enquiryProducts.forEach(p => { if (p.photo_url) imageUrls.push(p.photo_url); });
+  
+  // Delete Drive files
+  _deleteDriveImages(imageUrls);
+  
+  // Delete sheet rows
   _deleteRowsById(ss, 'Enquiries', 'enquiry_id', [enquiryId]);
-  _deleteRowsById(ss, 'Products', 'enquiry_id', [enquiryId]);
+  _deleteRowsById(ss, 'Products',  'enquiry_id', [enquiryId]);
+  
   return { success: true };
 }
 
@@ -266,8 +289,30 @@ function deleteEnquiry(enquiryId) {
 function batchDeleteEnquiries(ids) {
   if (!ids || !ids.length) return { success: true };
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  
+  const idSet = new Set(ids.map(String));
+  
+  // Collect image URLs
+  const enquiriesData = getSheetDataAsObjects(getSheet(ss, 'Enquiries'));
+  const productsData  = getSheetDataAsObjects(getSheet(ss, 'Products'));
+  
+  const imageUrls = [];
+  enquiriesData.forEach(e => {
+    if (!idSet.has(String(e.enquiry_id))) return;
+    if (e.business_card_url)   imageUrls.push(e.business_card_url);
+    if (e.business_card_url_2) imageUrls.push(e.business_card_url_2);
+  });
+  productsData.forEach(p => {
+    if (idSet.has(String(p.enquiry_id)) && p.photo_url) imageUrls.push(p.photo_url);
+  });
+  
+  // Delete Drive files
+  _deleteDriveImages(imageUrls);
+  
+  // Delete sheet rows
   _deleteRowsById(ss, 'Enquiries', 'enquiry_id', ids);
-  _deleteRowsById(ss, 'Products', 'enquiry_id', ids);
+  _deleteRowsById(ss, 'Products',  'enquiry_id', ids);
+  
   return { success: true, deleted: ids.length };
 }
 
@@ -291,4 +336,40 @@ function _deleteRowsById(ss, sheetName, colName, values) {
       sheet.deleteRow(i + 1); // +1 because Sheet rows are 1-indexed
     }
   }
+}
+
+/**
+ * Trash Drive files given an array of thumbnail/download URLs.
+ * Supports the thumbnail URL format:
+ *   https://drive.google.com/thumbnail?id=FILE_ID&sz=w1000
+ * and the download URL format:
+ *   https://drive.google.com/uc?id=FILE_ID&...
+ * Errors per file are silently swallowed so one bad URL
+ * doesn’t abort the whole delete.
+ */
+function _deleteDriveImages(urls) {
+  urls.forEach(url => {
+    try {
+      if (!url || typeof url !== 'string') return;
+      
+      let fileId = null;
+      
+      // Format 1: thumbnail URL  ?id=FILE_ID
+      const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      if (idMatch) fileId = idMatch[1];
+      
+      // Format 2: /d/FILE_ID/ (shareable link)
+      if (!fileId) {
+        const dMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (dMatch) fileId = dMatch[1];
+      }
+      
+      if (!fileId) return; // can’t determine ID, skip
+      
+      DriveApp.getFileById(fileId).setTrashed(true);
+    } catch (err) {
+      // Log but continue — don’t let one bad file block the rest
+      Logger.log('Could not delete Drive file from URL: ' + url + ' | Error: ' + err.message);
+    }
+  });
 }

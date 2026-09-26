@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Search, Trash2, CheckSquare, Square, X } from 'lucide-react';
+import { Search, Trash2, CheckSquare, Square, X, Building2, Phone, MapPin } from 'lucide-react';
 import Header from '../components/Header';
 
 const STATUS_COLORS = {
@@ -180,11 +180,20 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
 
                 <div style={styles.detailsRow}>
                   {enquiry.business_name && (
-                    <div style={styles.detailItem}>🏢 {enquiry.business_name}</div>
+                    <div style={styles.detailItem}>
+                      <Building2 size={12} style={styles.detailIcon} />
+                      {enquiry.business_name}
+                    </div>
                   )}
-                  <div style={styles.detailItem}>📱 {enquiry.mobile}</div>
+                  <div style={styles.detailItem}>
+                    <Phone size={12} style={styles.detailIcon} />
+                    {enquiry.mobile}
+                  </div>
                   {enquiry.address && (
-                    <div style={styles.detailItem}>📍 {enquiry.address}</div>
+                    <div style={styles.detailItem}>
+                      <MapPin size={12} style={styles.detailIcon} />
+                      {enquiry.address}
+                    </div>
                   )}
                 </div>
 
@@ -374,9 +383,16 @@ const styles = {
     marginBottom: '8px',
   },
   detailItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '5px',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
+  },
+  detailIcon: {
+    flexShrink: 0,
+    color: 'var(--text-muted)',
   },
   footerRow: {
     display: 'flex',
