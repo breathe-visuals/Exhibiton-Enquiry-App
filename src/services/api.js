@@ -5,10 +5,7 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA === 'true';
 
 const request = async (endpoint, method = 'GET', data = null) => {
   if (USE_MOCK) {
-    console.log(`[Mock API] ${method} ${endpoint}`, data);
-    // Simulate minimal network delay
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
+    // No artificial delay — localStorage is synchronous, instant response
     // Simple mock router
     if (endpoint === 'enquiries' && method === 'GET') {
       return mockApi.getEnquiries();
@@ -19,6 +16,13 @@ const request = async (endpoint, method = 'GET', data = null) => {
     }
     if (endpoint === 'enquiries' && method === 'POST') {
       return mockApi.saveEnquiry(data);
+    }
+    if (endpoint.startsWith('enquiry/') && method === 'DELETE') {
+      const id = endpoint.split('/')[1];
+      return mockApi.deleteEnquiry(id);
+    }
+    if (endpoint === 'enquiries/batch-delete' && method === 'POST') {
+      return mockApi.deleteEnquiries(data.ids);
     }
     // For other endpoints, mock them returning success for now
     return { success: true, data };
@@ -41,10 +45,6 @@ const request = async (endpoint, method = 'GET', data = null) => {
     };
 
     if (method === 'GET') {
-      // For GET requests, we can either pass params in URL or still use POST. 
-      // Using POST for GAS is safer to avoid CORS preflight issues sometimes, but let's stick to standard fetch.
-      // We will just use POST for everything to GAS to simplify CORS unless strictly designed otherwise.
-      // Assuming a standard POST wrapper:
       options.body = JSON.stringify({ method: 'GET', payload: null });
     }
 
@@ -72,6 +72,8 @@ export const getEnquiries = () => request('enquiries', 'GET');
 export const getEnquiryById = (id) => request(`enquiry/${id}`, 'GET');
 export const createEnquiry = (data) => request('enquiries', 'POST', data);
 export const updateEnquiry = (data) => request(`enquiry/${data.enquiry_id}`, 'PUT', data);
+export const deleteEnquiry = (id) => request(`enquiry/${id}`, 'DELETE');
+export const deleteEnquiries = (ids) => request('enquiries/batch-delete', 'POST', { ids });
 export const addProduct = (data) => request('products', 'POST', data);
 export const updateProduct = (data) => request(`product/${data.product_id}`, 'PUT', data);
 export const deleteProduct = (id) => request(`product/${id}`, 'DELETE');

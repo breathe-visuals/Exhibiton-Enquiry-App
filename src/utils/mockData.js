@@ -42,6 +42,27 @@ export const getEnquiryById = (id) => {
   return enquiries.find(e => e.enquiry_id === id);
 };
 
+/**
+ * Delete one enquiry by ID.
+ */
+export const deleteEnquiry = (id) => {
+  const enquiries = getEnquiries();
+  const updated = enquiries.filter(e => e.enquiry_id !== id);
+  localStorage.setItem(ENQUIRIES_KEY, JSON.stringify(updated));
+  return true;
+};
+
+/**
+ * Delete multiple enquiries by array of IDs.
+ */
+export const deleteEnquiries = (ids) => {
+  const set = new Set(ids);
+  const enquiries = getEnquiries();
+  const updated = enquiries.filter(e => !set.has(e.enquiry_id));
+  localStorage.setItem(ENQUIRIES_KEY, JSON.stringify(updated));
+  return true;
+};
+
 // Generate some initial mock data if localStorage is empty
 const generateMockData = () => {
   const mockData = [

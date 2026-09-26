@@ -3,12 +3,11 @@ import { Camera, Image as ImageIcon, Check, X, Plus, ZoomIn } from 'lucide-react
 import Header from '../components/Header';
 import AddProductModal from './AddProductModal';
 import ImageLightbox from '../components/ImageLightbox';
-import * as api from '../services/api';
 import { compressImage } from '../utils/imageUtils';
 
 const PAYMENT_MODES = ['Cash', 'RTGS', 'NEFT', 'UPI', 'Cheque', 'Card', 'Other'];
 
-const NewEnquiry = ({ navigateTo, setIsDirty }) => {
+const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
   const [formData, setFormData] = useState({
     customer_name: '',
     mobile: '',
@@ -79,20 +78,22 @@ const NewEnquiry = ({ navigateTo, setIsDirty }) => {
 
     setIsSaving(true);
 
+    const enquiry = {
+      ...formData,
+      products,
+      created_by: 'Current User',
+    };
+
+    // Navigate instantly — don't wait for the API
+    setIsDirty(false);
+    navigateTo('dashboard');
+
+    // Fire API in background (optimistic)
     try {
-      const enquiry = {
-        ...formData,
-        products,
-        created_by: 'Current User',
-      };
-
-      await api.createEnquiry(enquiry);
-
-      setIsDirty(false);
-      navigateTo('dashboard', { refresh: true });
+      await onSave(enquiry);
     } catch (error) {
       console.error(error);
-      alert('Failed to save enquiry. Please try again.');
+      alert('Failed to save enquiry on server. It may not appear after reload.');
     } finally {
       setIsSaving(false);
     }

@@ -20,6 +20,11 @@ function doPost(e) {
     } else if (endpoint && endpoint.startsWith('enquiry/') && method === 'GET') {
       const id = endpoint.split('/')[1];
       responseData = getEnquiryById(id);
+    } else if (endpoint && endpoint.startsWith('enquiry/') && method === 'DELETE') {
+      const id = endpoint.split('/')[1];
+      responseData = deleteEnquiry(id);
+    } else if (endpoint === 'enquiries/batch-delete' && method === 'POST') {
+      responseData = batchDeleteEnquiries(payload.ids);
     } else {
       throw new Error("Invalid endpoint or method");
     }
@@ -247,4 +252,43 @@ function getSheetDataAsObjects(sheet) {
     });
     return obj;
   });
+}
+
+// ─── Delete a single enquiry and all its products ───
+function deleteEnquiry(enquiryId) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  _deleteRowsById(ss, 'Enquiries', 'enquiry_id', [enquiryId]);
+  _deleteRowsById(ss, 'Products', 'enquiry_id', [enquiryId]);
+  return { success: true };
+}
+
+// ─── Batch delete multiple enquiries ───
+function batchDeleteEnquiries(ids) {
+  if (!ids || !ids.length) return { success: true };
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  _deleteRowsById(ss, 'Enquiries', 'enquiry_id', ids);
+  _deleteRowsById(ss, 'Products', 'enquiry_id', ids);
+  return { success: true, deleted: ids.length };
+}
+
+// Helper: delete rows where column 'colName' value is in 'values' array
+function _deleteRowsById(ss, sheetName, colName, values) {
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return;
+  
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return;
+  
+  const headers = data[0];
+  const colIndex = headers.indexOf(colName);
+  if (colIndex === -1) return;
+  
+  const valueSet = new Set(values.map(String));
+  
+  // Walk backwards so row deletion doesn't shift indices
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (valueSet.has(String(data[i][colIndex]))) {
+      sheet.deleteRow(i + 1); // +1 because Sheet rows are 1-indexed
+    }
+  }
 }
