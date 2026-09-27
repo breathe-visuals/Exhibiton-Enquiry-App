@@ -3,7 +3,12 @@ import * as mockApi from '../utils/mockData';
 const API_URL = import.meta.env.VITE_API_URL;
 const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA === 'true';
 
-const request = async (endpoint, method = 'GET', data = null) => {
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1500;
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const request = async (endpoint, method = 'GET', data = null, _retryCount = 0) => {
   if (USE_MOCK) {
     // No artificial delay — localStorage is synchronous, instant response
     // Simple mock router
@@ -58,12 +63,18 @@ const request = async (endpoint, method = 'GET', data = null) => {
     
     // Google Apps Script returned a caught error
     if (result && result.success === false) {
-      throw new Error(result.error || "Unknown backend error");
+      const errMsg = result.error || 'Unknown backend error';
+      // Server busy (LockService timeout) — retry automatically
+      if (_retryCount < MAX_RETRIES && errMsg.toLowerCase().includes('busy')) {
+        await sleep(RETRY_DELAY_MS * (_retryCount + 1));
+        return request(endpoint, method, data, _retryCount + 1);
+      }
+      throw new Error(errMsg);
     }
     
     return result;
   } catch (error) {
-    console.error("API Request failed:", error);
+    console.error('API Request failed:', error);
     throw error;
   }
 };

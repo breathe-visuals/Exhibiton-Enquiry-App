@@ -1,375 +1,387 @@
-const SPREADSHEET_ID = '1uLjPw-BZDsL9U9eCBeYpH-OpB3tC83spIjCATkJTWPI';
+﻿// ═══════════════════════════════════════════════════════════════════════════
+//  Exhibition Enquiry App – Google Apps Script Backend
+//  Multi-user safe: uses LockService on all writes + random IDs to prevent
+//  race conditions when multiple users submit enquiries simultaneously.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SPREADSHEET_ID          = '1uLjPw-BZDsL9U9eCBeYpH-OpB3tC83spIjCATkJTWPI';
 const BUSINESS_CARD_FOLDER_ID = '1-YN7EGNGuasPAqUhtchaL-9UvBRVuD33';
 const PRODUCT_IMAGE_FOLDER_ID = '1qVqxdwMrLMFUSDAbZemHigf6Y2X4rMnS';
 
+// How long (ms) to wait for a write lock before giving up
+const LOCK_TIMEOUT_MS = 30000;
+
+// ─── ID Generation ────────────────────────────────────────────────────────────
+// timestamp + 6-digit random to avoid collisions between concurrent requests
+function generateId(prefix) {
+  var ts   = new Date().getTime();
+  var rand = Math.floor(Math.random() * 900000 + 100000);
+  return prefix + '-' + ts + '-' + rand;
+}
+
+// ─── Response helpers ─────────────────────────────────────────────────────────
+function okResponse(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function errResponse(msg) {
+  return ContentService
+    .createTextOutput(JSON.stringify({ success: false, error: msg }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ─── Router ───────────────────────────────────────────────────────────────────
 function doPost(e) {
   try {
-    const endpoint = e.parameter.endpoint;
-    const requestData = JSON.parse(e.postData.contents);
-    const method = requestData.method;
-    const payload = requestData.payload;
-
-    let responseData = null;
+    var endpoint    = e.parameter.endpoint;
+    var requestData = JSON.parse(e.postData.contents);
+    var method      = requestData.method;
+    var payload     = requestData.payload;
+    var result      = null;
 
     if (endpoint === 'upload' && method === 'POST') {
-      responseData = handleUpload(payload);
-    } else if (endpoint === 'enquiries' && method === 'POST') {
-      responseData = createEnquiry(payload);
+      result = handleUpload(payload);
     } else if (endpoint === 'enquiries' && method === 'GET') {
-      responseData = getEnquiries();
+      result = getEnquiries();
+    } else if (endpoint === 'enquiries' && method === 'POST') {
+      result = createEnquiry(payload);
     } else if (endpoint && endpoint.startsWith('enquiry/') && method === 'GET') {
-      const id = endpoint.split('/')[1];
-      responseData = getEnquiryById(id);
+      result = getEnquiryById(endpoint.split('/')[1]);
     } else if (endpoint && endpoint.startsWith('enquiry/') && method === 'DELETE') {
-      const id = endpoint.split('/')[1];
-      responseData = deleteEnquiry(id);
+      result = deleteEnquiry(endpoint.split('/')[1]);
     } else if (endpoint === 'enquiries/batch-delete' && method === 'POST') {
-      responseData = batchDeleteEnquiries(payload.ids);
+      result = batchDeleteEnquiries(payload.ids);
     } else {
-      throw new Error("Invalid endpoint or method");
+      return errResponse('Invalid endpoint or method');
     }
 
-    return ContentService.createTextOutput(JSON.stringify(responseData))
-      .setMimeType(ContentService.MimeType.JSON);
-
+    return okResponse(result);
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ error: error.message, success: false }))
-      .setMimeType(ContentService.MimeType.JSON);
+    Logger.log('doPost error: ' + error.message + '\n' + (error.stack || ''));
+    return errResponse(error.message || 'Internal server error');
   }
 }
 
-// Handle GET requests (though we route most via POST to avoid CORS issues)
 function doGet(e) {
   try {
-    const endpoint = e.parameter.endpoint;
-    let responseData = null;
-    
-    if (endpoint === 'enquiries') {
-      responseData = getEnquiries();
-    } else if (endpoint && endpoint.startsWith('enquiry/')) {
-      const id = endpoint.split('/')[1];
-      responseData = getEnquiryById(id);
-    } else {
-       return ContentService.createTextOutput("App Backend is running.").setMimeType(ContentService.MimeType.TEXT);
+    var endpoint = e.parameter.endpoint;
+    if (!endpoint) {
+      return ContentService
+        .createTextOutput('Exhibition Enquiry App backend is running.')
+        .setMimeType(ContentService.MimeType.TEXT);
     }
-
-    return ContentService.createTextOutput(JSON.stringify(responseData))
-      .setMimeType(ContentService.MimeType.JSON);
+    if (endpoint === 'enquiries') return okResponse(getEnquiries());
+    if (endpoint.startsWith('enquiry/')) return okResponse(getEnquiryById(endpoint.split('/')[1]));
+    return errResponse('Not found');
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ error: error.message, success: false }))
-      .setMimeType(ContentService.MimeType.JSON);
+    Logger.log('doGet error: ' + error.message);
+    return errResponse(error.message);
   }
 }
 
-// Ensure CORS headers (Apps Script does this automatically for ContentService, but good practice)
-function doOptions(e) {
-  return ContentService.createTextOutput('')
-    .setMimeType(ContentService.MimeType.TEXT);
-}
-
-// --- Upload Logic ---
-function handleUpload(payload) {
-  const { file, type } = payload;
-  // file is a base64 string like "data:image/jpeg;base64,..."
-  
-  if (!file) throw new Error("No file provided");
-
-  const folderId = type === 'business_card' ? BUSINESS_CARD_FOLDER_ID : PRODUCT_IMAGE_FOLDER_ID;
-  const folder = DriveApp.getFolderById(folderId);
-
-  const splitBase = file.split(',');
-  const contentType = splitBase[0].split(';')[0].split(':')[1];
-  const base64Data = splitBase[1];
-
-  const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), contentType, `image_${new Date().getTime()}`);
-  const savedFile = folder.createFile(blob);
-  
-  // Set file sharing to anyone with the link can view (so frontend can show it)
-  savedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  
-  return savedFile.getDownloadUrl().replace('&export=download', ''); 
-  // or savedFile.getUrl() for the viewer page
-}
-
-// --- Database Logic ---
-function getSheet(ss, sheetName) {
-  let sheet = ss.getSheetByName(sheetName);
+// ─── Sheet helpers ────────────────────────────────────────────────────────────
+function getOrCreateSheet(ss, sheetName) {
+  var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
-    // Auto-create if it doesn't exist
     sheet = ss.insertSheet(sheetName);
     if (sheetName === 'Enquiries') {
-      sheet.appendRow(['enquiry_id', 'customer_name', 'mobile', 'business_name', 'address', 'business_card_url', 'business_card_url_2', 'advance_amount', 'payment_mode', 'payment_mode_custom', 'general_notes', 'event_name', 'created_by', 'created_at', 'status']);
+      sheet.appendRow([
+        'enquiry_id','customer_name','mobile','business_name','address',
+        'business_card_url','business_card_url_2','advance_amount',
+        'payment_mode','payment_mode_custom','general_notes','event_name',
+        'created_by','created_at','status'
+      ]);
     } else if (sheetName === 'Products') {
-      sheet.appendRow(['product_id', 'enquiry_id', 'photo_url', 'description', 'quantity', 'unit', 'weight', 'purity_material', 'customer_requirement', 'created_at']);
+      sheet.appendRow([
+        'product_id','enquiry_id','photo_url','description',
+        'quantity','unit','weight','purity_material',
+        'customer_requirement','created_at'
+      ]);
     }
   }
   return sheet;
 }
 
-function uploadAndGetUrl(base64Str, type) {
-  try {
-    if (!base64Str || !base64Str.startsWith('data:image')) return base64Str;
-    
-    const folderId = type === 'business_card' ? BUSINESS_CARD_FOLDER_ID : PRODUCT_IMAGE_FOLDER_ID;
-    const folder = DriveApp.getFolderById(folderId);
-
-    const splitBase = base64Str.split(',');
-    const contentType = splitBase[0].split(';')[0].split(':')[1];
-    const base64Data = splitBase[1];
-    
-    let ext = contentType.split('/')[1] || 'jpg';
-    if (ext === 'jpeg') ext = 'jpg';
-
-    const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), contentType, `image_${new Date().getTime()}.${ext}`);
-    const savedFile = folder.createFile(blob);
-    
-    // Return a reliable thumbnail URL for embedding in <img> tags.
-    // Standard Drive URLs are blocked by modern browsers for cross-site embedding.
-    return `https://drive.google.com/thumbnail?id=${savedFile.getId()}&sz=w1000`; 
-  } catch (err) {
-    return "ERROR: " + err.message;
-  }
-}
-
-function createEnquiry(enquiry) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  
-  if (enquiry.business_card_url && enquiry.business_card_url.startsWith('data:image')) {
-    enquiry.business_card_url = uploadAndGetUrl(enquiry.business_card_url, 'business_card');
-  }
-  if (enquiry.business_card_url_2 && enquiry.business_card_url_2.startsWith('data:image')) {
-    enquiry.business_card_url_2 = uploadAndGetUrl(enquiry.business_card_url_2, 'business_card');
-  }
-  
-  if (enquiry.products && enquiry.products.length > 0) {
-    enquiry.products.forEach(p => {
-      if (p.photo_url && p.photo_url.startsWith('data:image')) {
-        p.photo_url = uploadAndGetUrl(p.photo_url, 'product');
-      }
-    });
-  }
-  
-  // Save to Enquiries sheet
-  const enquiriesSheet = getSheet(ss, 'Enquiries');
-  const now = new Date().toISOString();
-  const enquiryId = enquiry.enquiry_id || `ENQ-${new Date().getTime()}`;
-  
-  enquiriesSheet.appendRow([
-    enquiryId,
-    enquiry.customer_name || '',
-    enquiry.mobile || '',
-    enquiry.business_name || '',
-    enquiry.address || '',
-    enquiry.business_card_url || '',
-    enquiry.business_card_url_2 || '',
-    enquiry.advance_amount || '',
-    enquiry.payment_mode || '',
-    enquiry.payment_mode_custom || '',
-    enquiry.general_notes || '',
-    enquiry.event_name || '',
-    enquiry.created_by || 'Unknown',
-    now,
-    enquiry.status || 'New'
-  ]);
-  
-  // Save products to Products sheet
-  if (enquiry.products && enquiry.products.length > 0) {
-    const productsSheet = getSheet(ss, 'Products');
-    const rows = enquiry.products.map(p => [
-      p.product_id || `PRD-${new Date().getTime()}-${Math.floor(Math.random()*1000)}`,
-      enquiryId,
-      p.photo_url || '',
-      p.description || '',
-      p.quantity || '',
-      p.unit || '',
-      p.weight || '',
-      p.purity_material || '',
-      p.customer_requirement || '',
-      now
-    ]);
-    productsSheet.getRange(productsSheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
-  }
-  
-  return { success: true, enquiry_id: enquiryId };
-}
-
-function getEnquiries() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const enquiriesSheet = getSheet(ss, 'Enquiries');
-  const productsSheet = getSheet(ss, 'Products');
-  
-  const enquiriesData = getSheetDataAsObjects(enquiriesSheet);
-  const productsData = getSheetDataAsObjects(productsSheet);
-  
-  // Group products by enquiry_id
-  const productsByEnquiry = {};
-  productsData.forEach(p => {
-    if (!productsByEnquiry[p.enquiry_id]) {
-      productsByEnquiry[p.enquiry_id] = [];
-    }
-    productsByEnquiry[p.enquiry_id].push(p);
-  });
-  
-  // Attach products to enquiries
-  enquiriesData.forEach(e => {
-    e.products = productsByEnquiry[e.enquiry_id] || [];
-  });
-  
-  // Sort by created_at descending
-  return enquiriesData.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-}
-
-function getEnquiryById(enquiryId) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const enquiriesSheet = getSheet(ss, 'Enquiries');
-  const productsSheet = getSheet(ss, 'Products');
-  
-  const enquiriesData = getSheetDataAsObjects(enquiriesSheet);
-  const enquiry = enquiriesData.find(e => e.enquiry_id === enquiryId);
-  
-  if (!enquiry) {
-    throw new Error("Enquiry not found");
-  }
-  
-  const productsData = getSheetDataAsObjects(productsSheet);
-  enquiry.products = productsData.filter(p => p.enquiry_id === enquiryId);
-  
-  return enquiry;
-}
-
-// Utility function to turn Sheet data into JS objects
-function getSheetDataAsObjects(sheet) {
-  const data = sheet.getDataRange().getValues();
-  if (data.length <= 1) return []; // Empty or just headers
-  
-  const headers = data[0];
-  const rows = data.slice(1);
-  
-  return rows.map(row => {
-    const obj = {};
-    headers.forEach((header, index) => {
-      obj[header] = row[index];
-    });
+function sheetToObjects(sheet) {
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  var headers = data[0];
+  return data.slice(1).map(function(row) {
+    var obj = {};
+    headers.forEach(function(h, i) { obj[h] = row[i]; });
     return obj;
   });
 }
 
-// ─── Delete a single enquiry and all its products ───
-function deleteEnquiry(enquiryId) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  
-  // Collect all image URLs before deleting rows
-  const enquiriesSheet = getSheet(ss, 'Enquiries');
-  const productsSheet  = getSheet(ss, 'Products');
-  const enquiriesData  = getSheetDataAsObjects(enquiriesSheet);
-  const productsData   = getSheetDataAsObjects(productsSheet);
-  
-  const enquiry = enquiriesData.find(e => String(e.enquiry_id) === String(enquiryId));
-  const enquiryProducts = productsData.filter(p => String(p.enquiry_id) === String(enquiryId));
-  
-  // Collect image URLs to delete from Drive
-  const imageUrls = [];
-  if (enquiry) {
-    if (enquiry.business_card_url)   imageUrls.push(enquiry.business_card_url);
-    if (enquiry.business_card_url_2) imageUrls.push(enquiry.business_card_url_2);
+// ─── Image upload ─────────────────────────────────────────────────────────────
+function handleUpload(payload) {
+  var file = payload.file;
+  var type = payload.type;
+  if (!file) throw new Error('No file provided');
+  var folderId = type === 'business_card' ? BUSINESS_CARD_FOLDER_ID : PRODUCT_IMAGE_FOLDER_ID;
+  return _uploadBase64(file, folderId);
+}
+
+function _uploadBase64(base64Str, folderId) {
+  if (!base64Str || !base64Str.startsWith('data:image')) return base64Str;
+  var parts       = base64Str.split(',');
+  var contentType = parts[0].split(';')[0].split(':')[1];
+  var base64Data  = parts[1];
+  var ext = (contentType.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  var blob = Utilities.newBlob(
+    Utilities.base64Decode(base64Data),
+    contentType,
+    'img_' + generateId('f') + '.' + ext
+  );
+  var folder    = DriveApp.getFolderById(folderId);
+  var savedFile = folder.createFile(blob);
+  savedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return 'https://drive.google.com/thumbnail?id=' + savedFile.getId() + '&sz=w1000';
+}
+
+function _maybeUpload(val, type) {
+  if (!val) return '';
+  if (val.startsWith('data:image')) {
+    var folderId = type === 'business_card' ? BUSINESS_CARD_FOLDER_ID : PRODUCT_IMAGE_FOLDER_ID;
+    return _uploadBase64(val, folderId);
   }
-  enquiryProducts.forEach(p => { if (p.photo_url) imageUrls.push(p.photo_url); });
-  
-  // Delete Drive files
-  _deleteDriveImages(imageUrls);
-  
-  // Delete sheet rows
-  _deleteRowsById(ss, 'Enquiries', 'enquiry_id', [enquiryId]);
-  _deleteRowsById(ss, 'Products',  'enquiry_id', [enquiryId]);
-  
-  return { success: true };
+  return val; // already a URL – pass through
 }
 
-// ─── Batch delete multiple enquiries ───
+// ─── Create Enquiry (with write lock) ─────────────────────────────────────────
+function createEnquiry(enquiry) {
+  // Upload images BEFORE acquiring the lock (Drive ops are slow)
+  var bcUrl1   = _maybeUpload(enquiry.business_card_url, 'business_card');
+  var bcUrl2   = _maybeUpload(enquiry.business_card_url_2, 'business_card');
+  var products = (enquiry.products || []).map(function(p) {
+    return Object.assign({}, p, { photo_url: _maybeUpload(p.photo_url, 'product') });
+  });
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(LOCK_TIMEOUT_MS);
+  } catch (lockErr) {
+    throw new Error('Server is busy with another request. Please try again in a moment.');
+  }
+
+  try {
+    var ss             = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var enquiriesSheet = getOrCreateSheet(ss, 'Enquiries');
+    var productsSheet  = getOrCreateSheet(ss, 'Products');
+    var now            = new Date().toISOString();
+    var enquiryId      = enquiry.enquiry_id || generateId('ENQ');
+
+    enquiriesSheet.appendRow([
+      enquiryId,
+      enquiry.customer_name       || '',
+      enquiry.mobile              || '',
+      enquiry.business_name       || '',
+      enquiry.address             || '',
+      bcUrl1,
+      bcUrl2,
+      enquiry.advance_amount      || '',
+      enquiry.payment_mode        || '',
+      enquiry.payment_mode_custom || '',
+      enquiry.general_notes       || '',
+      enquiry.event_name          || '',
+      enquiry.created_by          || 'Unknown',
+      now,
+      enquiry.status              || 'New',
+    ]);
+
+    if (products.length > 0) {
+      var rows = products.map(function(p) {
+        return [
+          p.product_id            || generateId('PRD'),
+          enquiryId,
+          p.photo_url             || '',
+          p.description           || '',
+          p.quantity              || '',
+          p.unit                  || '',
+          p.weight                || '',
+          p.purity_material       || '',
+          p.customer_requirement  || '',
+          now,
+        ];
+      });
+      productsSheet
+        .getRange(productsSheet.getLastRow() + 1, 1, rows.length, rows[0].length)
+        .setValues(rows);
+    }
+
+    SpreadsheetApp.flush(); // commit before releasing lock
+    return { success: true, enquiry_id: enquiryId };
+
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ─── Read all Enquiries ────────────────────────────────────────────────────────
+function getEnquiries() {
+  var ss             = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var enquiriesSheet = getOrCreateSheet(ss, 'Enquiries');
+  var productsSheet  = getOrCreateSheet(ss, 'Products');
+
+  var enquiriesData = sheetToObjects(enquiriesSheet);
+  var productsData  = sheetToObjects(productsSheet);
+
+  // Group products by enquiry_id (O(n) map instead of O(n²) nested filter)
+  var productMap = {};
+  productsData.forEach(function(p) {
+    var id = String(p.enquiry_id);
+    if (!productMap[id]) productMap[id] = [];
+    productMap[id].push(p);
+  });
+
+  enquiriesData.forEach(function(e) {
+    e.products = productMap[String(e.enquiry_id)] || [];
+  });
+
+  return enquiriesData.sort(function(a, b) {
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
+}
+
+// ─── Read single Enquiry ──────────────────────────────────────────────────────
+function getEnquiryById(enquiryId) {
+  var ss             = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var enquiriesSheet = getOrCreateSheet(ss, 'Enquiries');
+  var productsSheet  = getOrCreateSheet(ss, 'Products');
+
+  var enquiries = sheetToObjects(enquiriesSheet);
+  var enquiry   = null;
+  for (var i = 0; i < enquiries.length; i++) {
+    if (String(enquiries[i].enquiry_id) === String(enquiryId)) {
+      enquiry = enquiries[i];
+      break;
+    }
+  }
+  if (!enquiry) throw new Error('Enquiry not found: ' + enquiryId);
+
+  enquiry.products = sheetToObjects(productsSheet).filter(function(p) {
+    return String(p.enquiry_id) === String(enquiryId);
+  });
+
+  return enquiry;
+}
+
+// ─── Delete single Enquiry (with write lock) ──────────────────────────────────
+function deleteEnquiry(enquiryId) {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(LOCK_TIMEOUT_MS); }
+  catch (_) { throw new Error('Server is busy. Please try again.'); }
+
+  try {
+    var ss          = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var enquiryData = sheetToObjects(getOrCreateSheet(ss, 'Enquiries'));
+    var productData = sheetToObjects(getOrCreateSheet(ss, 'Products'));
+
+    var enquiry  = null;
+    for (var i = 0; i < enquiryData.length; i++) {
+      if (String(enquiryData[i].enquiry_id) === String(enquiryId)) {
+        enquiry = enquiryData[i]; break;
+      }
+    }
+    var products = productData.filter(function(p) {
+      return String(p.enquiry_id) === String(enquiryId);
+    });
+
+    var imageUrls = [];
+    if (enquiry) {
+      if (enquiry.business_card_url)   imageUrls.push(enquiry.business_card_url);
+      if (enquiry.business_card_url_2) imageUrls.push(enquiry.business_card_url_2);
+    }
+    products.forEach(function(p) { if (p.photo_url) imageUrls.push(p.photo_url); });
+
+    _deleteDriveImages(imageUrls);
+    _deleteRowsById(ss, 'Enquiries', 'enquiry_id', [enquiryId]);
+    _deleteRowsById(ss, 'Products',  'enquiry_id', [enquiryId]);
+    SpreadsheetApp.flush();
+
+    return { success: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ─── Batch delete Enquiries (with write lock) ──────────────────────────────────
 function batchDeleteEnquiries(ids) {
-  if (!ids || !ids.length) return { success: true };
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  
-  const idSet = new Set(ids.map(String));
-  
-  // Collect image URLs
-  const enquiriesData = getSheetDataAsObjects(getSheet(ss, 'Enquiries'));
-  const productsData  = getSheetDataAsObjects(getSheet(ss, 'Products'));
-  
-  const imageUrls = [];
-  enquiriesData.forEach(e => {
-    if (!idSet.has(String(e.enquiry_id))) return;
-    if (e.business_card_url)   imageUrls.push(e.business_card_url);
-    if (e.business_card_url_2) imageUrls.push(e.business_card_url_2);
-  });
-  productsData.forEach(p => {
-    if (idSet.has(String(p.enquiry_id)) && p.photo_url) imageUrls.push(p.photo_url);
-  });
-  
-  // Delete Drive files
-  _deleteDriveImages(imageUrls);
-  
-  // Delete sheet rows
-  _deleteRowsById(ss, 'Enquiries', 'enquiry_id', ids);
-  _deleteRowsById(ss, 'Products',  'enquiry_id', ids);
-  
-  return { success: true, deleted: ids.length };
+  if (!ids || ids.length === 0) return { success: true, deleted: 0 };
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(LOCK_TIMEOUT_MS); }
+  catch (_) { throw new Error('Server is busy. Please try again.'); }
+
+  try {
+    var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var idSet = {};
+    ids.forEach(function(id) { idSet[String(id)] = true; });
+
+    var enquiryData = sheetToObjects(getOrCreateSheet(ss, 'Enquiries'));
+    var productData = sheetToObjects(getOrCreateSheet(ss, 'Products'));
+
+    var imageUrls = [];
+    enquiryData.forEach(function(e) {
+      if (!idSet[String(e.enquiry_id)]) return;
+      if (e.business_card_url)   imageUrls.push(e.business_card_url);
+      if (e.business_card_url_2) imageUrls.push(e.business_card_url_2);
+    });
+    productData.forEach(function(p) {
+      if (idSet[String(p.enquiry_id)] && p.photo_url) imageUrls.push(p.photo_url);
+    });
+
+    _deleteDriveImages(imageUrls);
+    _deleteRowsById(ss, 'Enquiries', 'enquiry_id', ids);
+    _deleteRowsById(ss, 'Products',  'enquiry_id', ids);
+    SpreadsheetApp.flush();
+
+    return { success: true, deleted: ids.length };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
-// Helper: delete rows where column 'colName' value is in 'values' array
+// ─── Sheet row deletion helper ────────────────────────────────────────────────
 function _deleteRowsById(ss, sheetName, colName, values) {
-  const sheet = ss.getSheetByName(sheetName);
+  var sheet = ss.getSheetByName(sheetName);
   if (!sheet) return;
-  
-  const data = sheet.getDataRange().getValues();
+  var data = sheet.getDataRange().getValues();
   if (data.length <= 1) return;
-  
-  const headers = data[0];
-  const colIndex = headers.indexOf(colName);
+
+  var headers  = data[0];
+  var colIndex = headers.indexOf(colName);
   if (colIndex === -1) return;
-  
-  const valueSet = new Set(values.map(String));
-  
-  // Walk backwards so row deletion doesn't shift indices
-  for (let i = data.length - 1; i >= 1; i--) {
-    if (valueSet.has(String(data[i][colIndex]))) {
-      sheet.deleteRow(i + 1); // +1 because Sheet rows are 1-indexed
+
+  var valueSet = {};
+  values.forEach(function(v) { valueSet[String(v)] = true; });
+
+  // Walk backwards so row indices stay stable
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (valueSet[String(data[i][colIndex])]) {
+      sheet.deleteRow(i + 1); // +1: Sheets are 1-indexed
     }
   }
 }
 
-/**
- * Trash Drive files given an array of thumbnail/download URLs.
- * Supports the thumbnail URL format:
- *   https://drive.google.com/thumbnail?id=FILE_ID&sz=w1000
- * and the download URL format:
- *   https://drive.google.com/uc?id=FILE_ID&...
- * Errors per file are silently swallowed so one bad URL
- * doesn’t abort the whole delete.
- */
+// ─── Drive image deletion ─────────────────────────────────────────────────────
 function _deleteDriveImages(urls) {
-  urls.forEach(url => {
+  urls.forEach(function(url) {
     try {
       if (!url || typeof url !== 'string') return;
-      
-      let fileId = null;
-      
-      // Format 1: thumbnail URL  ?id=FILE_ID
-      const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-      if (idMatch) fileId = idMatch[1];
-      
-      // Format 2: /d/FILE_ID/ (shareable link)
+      var fileId = null;
+      var qMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      if (qMatch) fileId = qMatch[1];
       if (!fileId) {
-        const dMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        var dMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
         if (dMatch) fileId = dMatch[1];
       }
-      
-      if (!fileId) return; // can’t determine ID, skip
-      
+      if (!fileId) return;
       DriveApp.getFileById(fileId).setTrashed(true);
-    } catch (err) {
-      // Log but continue — don’t let one bad file block the rest
-      Logger.log('Could not delete Drive file from URL: ' + url + ' | Error: ' + err.message);
+    } catch (e) {
+      Logger.log('_deleteDriveImages skipped: ' + url + ' | ' + e.message);
     }
   });
 }

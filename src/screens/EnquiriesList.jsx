@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Search, Trash2, CheckSquare, Square, X, Building2, Phone, MapPin } from 'lucide-react';
+import { Search, Trash2, CheckSquare, Square, X, Building2, Phone, MapPin, ArrowUpDown } from 'lucide-react';
 import Header from '../components/Header';
 
 const STATUS_COLORS = {
@@ -8,23 +8,49 @@ const STATUS_COLORS = {
   'Closed':   { bg: '#dcfce7', color: '#16a34a' },
 };
 
+// Status priority for sorting: New first, Follow Up second, Closed last
+const STATUS_ORDER = { 'New': 0, 'Follow Up': 1, 'Closed': 2 };
+
+const SORT_OPTIONS = [
+  { value: 'newest',   label: 'Newest First' },
+  { value: 'oldest',   label: 'Oldest First' },
+  { value: 'status',   label: 'Status (New→Closed)' },
+  { value: 'name_az',  label: 'Name A→Z' },
+];
+
 const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
   const [searchTerm, setSearchTerm]     = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [sortBy, setSortBy]             = useState('newest');
+  const [showSortMenu, setShowSortMenu] = useState(false);
   const [selectMode, setSelectMode]     = useState(false);
   const [selected, setSelected]         = useState(new Set());
   const [isDeleting, setIsDeleting]     = useState(false);
 
-  const filteredEnquiries = enquiries.filter(e => {
+  const filteredEnquiries = React.useMemo(() => {
     const term = searchTerm.toLowerCase();
-    const matchesSearch = (
-      e.customer_name?.toLowerCase().includes(term) ||
-      e.mobile?.includes(term) ||
-      e.business_name?.toLowerCase().includes(term)
-    );
-    const matchesStatus = statusFilter === 'All' || e.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+    const filtered = enquiries.filter(e => {
+      const matchesSearch = (
+        e.customer_name?.toLowerCase().includes(term) ||
+        e.mobile?.includes(term) ||
+        e.business_name?.toLowerCase().includes(term)
+      );
+      const matchesStatus = statusFilter === 'All' || e.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+
+    // Apply sort
+    return [...filtered].sort((a, b) => {
+      if (sortBy === 'newest') return new Date(b.created_at) - new Date(a.created_at);
+      if (sortBy === 'oldest') return new Date(a.created_at) - new Date(b.created_at);
+      if (sortBy === 'status') {
+        const diff = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
+        return diff !== 0 ? diff : new Date(b.created_at) - new Date(a.created_at);
+      }
+      if (sortBy === 'name_az') return (a.customer_name || '').localeCompare(b.customer_name || '');
+      return 0;
+    });
+  }, [enquiries, searchTerm, statusFilter, sortBy]);
 
   const toggleSelect = useCallback((id) => {
     setSelected(prev => {
@@ -91,8 +117,8 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
         )}
       </div>
 
-      {/* Search + Filter row */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+      {/* Search + Filter + Sort row */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
         <div style={{ ...styles.searchContainer, flex: 2 }}>
           <Search size={18} color="var(--text-muted)" style={styles.searchIcon} />
           <input
@@ -111,11 +137,43 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
           onChange={(e) => setStatusFilter(e.target.value)}
         >
           <option value="All">All</option>
-          <option value="New">New</option>
-          <option value="Follow Up">Follow Up</option>
-          <option value="Closed">Closed</option>
+          <option value="New">🔵 New</option>
+          <option value="Follow Up">🟡 Follow Up</option>
+          <option value="Closed">🟢 Closed</option>
         </select>
       </div>
+
+      {/* Sort row */}
+      <div style={styles.sortRow}>
+        <span style={styles.sortLabel}>Sort by:</span>
+        <div style={styles.sortChips}>
+          {SORT_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              style={{
+                ...styles.sortChip,
+                ...(sortBy === opt.value ? styles.sortChipActive : {}),
+              }}
+              onClick={() => setSortBy(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Count + result summary */}
+      <div style={styles.resultSummary}>
+        <span style={styles.resultCount}>{filteredEnquiries.length} enquir{filteredEnquiries.length !== 1 ? 'ies' : 'y'}</span>
+        {statusFilter !== 'All' && (
+          <span style={{ ...styles.activeFilter, backgroundColor: STATUS_COLORS[statusFilter]?.bg, color: STATUS_COLORS[statusFilter]?.color }}>
+            {statusFilter}
+          </span>
+        )}
+      </div>
+
+      {/* margin before list */}
+      <div style={{ marginBottom: '12px' }} />
 
       {/* Select-mode action bar */}
       {selectMode && (
@@ -415,6 +473,58 @@ const styles = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
+  },
+  sortRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '8px',
+    flexWrap: 'wrap',
+  },
+  sortLabel: {
+    fontSize: '0.75rem',
+    color: 'var(--text-muted)',
+    fontWeight: '600',
+    flexShrink: 0,
+  },
+  sortChips: {
+    display: 'flex',
+    gap: '6px',
+    flexWrap: 'wrap',
+  },
+  sortChip: {
+    fontSize: '0.72rem',
+    padding: '4px 10px',
+    borderRadius: '20px',
+    border: '1px solid var(--border-color)',
+    background: 'white',
+    color: 'var(--text-muted)',
+    cursor: 'pointer',
+    fontWeight: '500',
+    transition: 'all 0.15s',
+  },
+  sortChipActive: {
+    background: 'var(--primary-color)',
+    color: 'white',
+    borderColor: 'var(--primary-color)',
+    fontWeight: '600',
+  },
+  resultSummary: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '4px',
+  },
+  resultCount: {
+    fontSize: '0.78rem',
+    color: 'var(--text-muted)',
+    fontWeight: '500',
+  },
+  activeFilter: {
+    fontSize: '0.7rem',
+    padding: '2px 8px',
+    borderRadius: '12px',
+    fontWeight: '600',
   },
 };
 
