@@ -1,32 +1,93 @@
-import React, { useState, useCallback } from 'react';
-import { Search, Trash2, CheckSquare, Square, X, Building2, Phone, MapPin, ArrowUpDown } from 'lucide-react';
-import Header from '../components/Header';
+import React, { useState, useCallback, useRef } from 'react';
+import { Search, Trash2, CheckSquare, Square, X, Building2, Phone, MapPin } from 'lucide-react';
 
 const STATUS_COLORS = {
-  'New':      { bg: '#e0e7ff', color: '#2563eb' },
-  'Follow Up':{ bg: '#fef9c3', color: '#ca8a04' },
-  'Closed':   { bg: '#dcfce7', color: '#16a34a' },
+  'New':       { bg: '#e0e7ff', color: '#2563eb' },
+  'Follow Up': { bg: '#fef9c3', color: '#ca8a04' },
+  'Closed':    { bg: '#dcfce7', color: '#16a34a' },
 };
 
-// Status priority for sorting: New first, Follow Up second, Closed last
+// Status cycle order
 const STATUS_ORDER = { 'New': 0, 'Follow Up': 1, 'Closed': 2 };
+const STATUS_LIST  = ['New', 'Follow Up', 'Closed'];
 
 const SORT_OPTIONS = [
-  { value: 'newest',   label: 'Newest First' },
-  { value: 'oldest',   label: 'Oldest First' },
-  { value: 'status',   label: 'Status (New→Closed)' },
-  { value: 'name_az',  label: 'Name A→Z' },
+  { value: 'newest',  label: 'Newest First' },
+  { value: 'oldest',  label: 'Oldest First' },
+  { value: 'status',  label: 'Status (New→Closed)' },
+  { value: 'name_az', label: 'Name A→Z' },
 ];
 
-const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
+// How long (ms) to hold before triggering long-press
+const LONG_PRESS_DELAY = 500;
+
+/* ─── Status Action Sheet ─────────────────────────────────────────────────── */
+const StatusSheet = ({ enquiry, onClose, onSelect, isUpdating }) => (
+  <>
+    {/* Backdrop */}
+    <div style={sheetStyles.backdrop} onClick={onClose} />
+
+    {/* Bottom sheet */}
+    <div style={sheetStyles.sheet}>
+      <div style={sheetStyles.handle} />
+      <div style={sheetStyles.sheetTitle}>Change Status</div>
+      <div style={sheetStyles.name}>{enquiry.customer_name}</div>
+
+      <div style={sheetStyles.options}>
+        {STATUS_LIST.map(s => {
+          const sc      = STATUS_COLORS[s];
+          const active  = enquiry.status === s;
+          return (
+            <button
+              key={s}
+              style={{
+                ...sheetStyles.optBtn,
+                backgroundColor: active ? sc.bg : 'transparent',
+                border: `2px solid ${active ? sc.color : 'var(--border-color)'}`,
+                color: active ? sc.color : 'var(--text-main)',
+                opacity: isUpdating ? 0.6 : 1,
+              }}
+              disabled={isUpdating || active}
+              onClick={() => onSelect(s)}
+            >
+              {active && <span style={{ marginRight: '6px' }}>✓</span>}
+              {s}
+              {active && <span style={{ fontSize: '0.7rem', marginLeft: '6px', opacity: 0.7 }}>(current)</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {isUpdating && (
+        <div style={{ textAlign: 'center', padding: '8px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+          Saving…
+        </div>
+      )}
+
+      <button style={sheetStyles.cancelBtn} onClick={onClose} disabled={isUpdating}>Cancel</button>
+    </div>
+  </>
+);
+
+/* ─── Main Component ─────────────────────────────────────────────────────── */
+const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatus }) => {
   const [searchTerm, setSearchTerm]     = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [sortBy, setSortBy]             = useState('newest');
-  const [showSortMenu, setShowSortMenu] = useState(false);
   const [selectMode, setSelectMode]     = useState(false);
   const [selected, setSelected]         = useState(new Set());
   const [isDeleting, setIsDeleting]     = useState(false);
 
+  // Status sheet state
+  const [sheetEnquiry, setSheetEnquiry] = useState(null); // the enquiry whose sheet is open
+  const [isUpdating, setIsUpdating]     = useState(false);
+  const [updateError, setUpdateError]   = useState(null);
+
+  // Long-press refs
+  const longPressTimer = useRef(null);
+  const longPressFired = useRef(false);
+
+  /* ── Filtering & sorting ─────────────────────────────────────────────── */
   const filteredEnquiries = React.useMemo(() => {
     const term = searchTerm.toLowerCase();
     const filtered = enquiries.filter(e => {
@@ -39,7 +100,6 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
       return matchesSearch && matchesStatus;
     });
 
-    // Apply sort
     return [...filtered].sort((a, b) => {
       if (sortBy === 'newest') return new Date(b.created_at) - new Date(a.created_at);
       if (sortBy === 'oldest') return new Date(a.created_at) - new Date(b.created_at);
@@ -52,6 +112,7 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
     });
   }, [enquiries, searchTerm, statusFilter, sortBy]);
 
+  /* ── Select mode ─────────────────────────────────────────────────────── */
   const toggleSelect = useCallback((id) => {
     setSelected(prev => {
       const next = new Set(prev);
@@ -89,7 +150,28 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
     }
   };
 
+  /* ── Long-press handlers ─────────────────────────────────────────────── */
+  const startLongPress = useCallback((enquiry) => {
+    longPressFired.current = false;
+    longPressTimer.current = setTimeout(() => {
+      longPressFired.current = true;
+      // Haptic feedback on supported devices
+      if (navigator.vibrate) navigator.vibrate(60);
+      setSheetEnquiry(enquiry);
+    }, LONG_PRESS_DELAY);
+  }, []);
+
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  /* ── Card click ──────────────────────────────────────────────────────── */
   const handleCardClick = (enquiry) => {
+    // If the long-press fired, don't also navigate
+    if (longPressFired.current) return;
     if (selectMode) {
       toggleSelect(enquiry.enquiry_id);
     } else {
@@ -97,8 +179,30 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
     }
   };
 
+  /* ── Status sheet actions ────────────────────────────────────────────── */
+  const handleStatusSelect = async (newStatus) => {
+    if (!sheetEnquiry) return;
+    setIsUpdating(true);
+    setUpdateError(null);
+    try {
+      await onUpdateStatus(sheetEnquiry.enquiry_id, newStatus);
+      setSheetEnquiry(null);
+    } catch (err) {
+      setUpdateError(err.message || 'Failed to update status. Please try again.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const closeSheet = () => {
+    if (isUpdating) return;
+    setSheetEnquiry(null);
+    setUpdateError(null);
+  };
+
   const allSelected = filteredEnquiries.length > 0 && selected.size === filteredEnquiries.length;
 
+  /* ── Render ──────────────────────────────────────────────────────────── */
   return (
     <div>
       {/* Header with select toggle */}
@@ -117,7 +221,7 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
         )}
       </div>
 
-      {/* Search + Filter + Sort row */}
+      {/* Search + Status filter */}
       <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
         <div style={{ ...styles.searchContainer, flex: 2 }}>
           <Search size={18} color="var(--text-muted)" style={styles.searchIcon} />
@@ -143,9 +247,9 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
         </select>
       </div>
 
-      {/* Sort row */}
+      {/* Sort chips */}
       <div style={styles.sortRow}>
-        <span style={styles.sortLabel}>Sort by:</span>
+        <span style={styles.sortLabel}>Sort:</span>
         <div style={styles.sortChips}>
           {SORT_OPTIONS.map(opt => (
             <button
@@ -162,17 +266,22 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
         </div>
       </div>
 
-      {/* Count + result summary */}
+      {/* Result summary */}
       <div style={styles.resultSummary}>
-        <span style={styles.resultCount}>{filteredEnquiries.length} enquir{filteredEnquiries.length !== 1 ? 'ies' : 'y'}</span>
+        <span style={styles.resultCount}>
+          {filteredEnquiries.length} enquir{filteredEnquiries.length !== 1 ? 'ies' : 'y'}
+        </span>
         {statusFilter !== 'All' && (
           <span style={{ ...styles.activeFilter, backgroundColor: STATUS_COLORS[statusFilter]?.bg, color: STATUS_COLORS[statusFilter]?.color }}>
             {statusFilter}
           </span>
         )}
+        {/* Long-press hint */}
+        {!selectMode && filteredEnquiries.length > 0 && (
+          <span style={styles.hintText}>Hold card to change status</span>
+        )}
       </div>
 
-      {/* margin before list */}
       <div style={{ marginBottom: '12px' }} />
 
       {/* Select-mode action bar */}
@@ -182,9 +291,7 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
             {allSelected ? <CheckSquare size={18} color="var(--primary-color)" /> : <Square size={18} color="var(--text-muted)" />}
             <span>{allSelected ? 'Deselect All' : 'Select All'}</span>
           </button>
-          <span style={styles.selectedCount}>
-            {selected.size} selected
-          </span>
+          <span style={styles.selectedCount}>{selected.size} selected</span>
           {selected.size > 0 && (
             <button
               style={styles.deleteBtn}
@@ -202,10 +309,10 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
         </div>
       )}
 
-      {/* List */}
+      {/* Enquiry cards */}
       <div style={styles.list}>
         {filteredEnquiries.map(enquiry => {
-          const isSelected = selected.has(enquiry.enquiry_id);
+          const isSelected  = selected.has(enquiry.enquiry_id);
           const statusStyle = STATUS_COLORS[enquiry.status] || STATUS_COLORS['New'];
           return (
             <div
@@ -217,8 +324,15 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
                 ...(selectMode ? { cursor: 'pointer' } : {}),
               }}
               onClick={() => handleCardClick(enquiry)}
+              onMouseDown={() => !selectMode && startLongPress(enquiry)}
+              onMouseUp={cancelLongPress}
+              onMouseLeave={cancelLongPress}
+              onTouchStart={() => !selectMode && startLongPress(enquiry)}
+              onTouchEnd={cancelLongPress}
+              onTouchCancel={cancelLongPress}
+              onContextMenu={(e) => { e.preventDefault(); if (!selectMode) { cancelLongPress(); setSheetEnquiry(enquiry); } }}
             >
-              {/* Checkbox (visible only in select mode) */}
+              {/* Checkbox (select mode only) */}
               {selectMode && (
                 <div style={styles.checkboxWrapper}>
                   {isSelected
@@ -231,7 +345,17 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={styles.headerRow}>
                   <h3 style={styles.customerName}>{enquiry.customer_name}</h3>
-                  <span style={{ ...styles.statusBadge, backgroundColor: statusStyle.bg, color: statusStyle.color }}>
+                  {/* Status badge — tappable shortcut to open sheet */}
+                  <span
+                    style={{ ...styles.statusBadge, backgroundColor: statusStyle.bg, color: statusStyle.color }}
+                    onClick={(e) => {
+                      if (selectMode) return;
+                      e.stopPropagation(); // don't navigate
+                      cancelLongPress();
+                      setSheetEnquiry(enquiry);
+                    }}
+                    title="Tap to change status"
+                  >
                     {enquiry.status}
                   </span>
                 </div>
@@ -276,10 +400,29 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries }) => {
           </div>
         )}
       </div>
+
+      {/* Error toast for status update failure */}
+      {updateError && (
+        <div style={styles.errorToast}>
+          ⚠️ {updateError}
+          <button style={styles.errorClose} onClick={() => setUpdateError(null)}>✕</button>
+        </div>
+      )}
+
+      {/* Status bottom sheet */}
+      {sheetEnquiry && (
+        <StatusSheet
+          enquiry={sheetEnquiry}
+          onClose={closeSheet}
+          onSelect={handleStatusSelect}
+          isUpdating={isUpdating}
+        />
+      )}
     </div>
   );
 };
 
+/* ─── Styles ─────────────────────────────────────────────────────────────── */
 const styles = {
   topBar: {
     display: 'flex',
@@ -318,9 +461,7 @@ const styles = {
     color: 'var(--text-muted)',
     cursor: 'pointer',
   },
-  searchContainer: {
-    position: 'relative',
-  },
+  searchContainer: { position: 'relative' },
   searchIcon: {
     position: 'absolute',
     left: '12px',
@@ -342,6 +483,62 @@ const styles = {
     fontSize: '0.85rem',
     flex: 1,
     minWidth: '90px',
+  },
+  sortRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '8px',
+    flexWrap: 'wrap',
+  },
+  sortLabel: {
+    fontSize: '0.75rem',
+    color: 'var(--text-muted)',
+    fontWeight: '600',
+    flexShrink: 0,
+  },
+  sortChips: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
+  sortChip: {
+    fontSize: '0.72rem',
+    padding: '4px 10px',
+    borderRadius: '20px',
+    border: '1px solid var(--border-color)',
+    background: 'white',
+    color: 'var(--text-muted)',
+    cursor: 'pointer',
+    fontWeight: '500',
+    transition: 'all 0.15s',
+  },
+  sortChipActive: {
+    background: 'var(--primary-color)',
+    color: 'white',
+    borderColor: 'var(--primary-color)',
+    fontWeight: '600',
+  },
+  resultSummary: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '4px',
+    flexWrap: 'wrap',
+  },
+  resultCount: {
+    fontSize: '0.78rem',
+    color: 'var(--text-muted)',
+    fontWeight: '500',
+  },
+  activeFilter: {
+    fontSize: '0.7rem',
+    padding: '2px 8px',
+    borderRadius: '12px',
+    fontWeight: '600',
+  },
+  hintText: {
+    fontSize: '0.68rem',
+    color: 'var(--text-muted)',
+    opacity: 0.65,
+    marginLeft: 'auto',
+    fontStyle: 'italic',
   },
   selectionBar: {
     display: 'flex',
@@ -399,16 +596,15 @@ const styles = {
     gap: '10px',
     transition: 'box-shadow 0.15s, border-color 0.15s',
     border: '1.5px solid transparent',
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
   },
   selectedCard: {
     borderColor: 'var(--primary-color)',
     backgroundColor: '#eff6ff',
     boxShadow: '0 0 0 2px rgba(37,99,235,0.15)',
   },
-  checkboxWrapper: {
-    paddingTop: '2px',
-    flexShrink: 0,
-  },
+  checkboxWrapper: { paddingTop: '2px', flexShrink: 0 },
   headerRow: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -427,10 +623,12 @@ const styles = {
   },
   statusBadge: {
     fontSize: '0.7rem',
-    padding: '2px 8px',
+    padding: '3px 9px',
     borderRadius: '12px',
     fontWeight: '600',
     flexShrink: 0,
+    cursor: 'pointer',
+    transition: 'opacity 0.15s',
   },
   detailsRow: {
     fontSize: '0.82rem',
@@ -448,10 +646,7 @@ const styles = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
   },
-  detailIcon: {
-    flexShrink: 0,
-    color: 'var(--text-muted)',
-  },
+  detailIcon: { flexShrink: 0, color: 'var(--text-muted)' },
   footerRow: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -459,10 +654,7 @@ const styles = {
     paddingTop: '6px',
     borderTop: '1px solid var(--border-color)',
   },
-  meta: {
-    fontSize: '0.72rem',
-    color: 'var(--text-muted)',
-  },
+  meta: { fontSize: '0.72rem', color: 'var(--text-muted)' },
   eventLabel: {
     fontSize: '0.7rem',
     color: 'var(--text-muted)',
@@ -474,57 +666,106 @@ const styles = {
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
   },
-  sortRow: {
+  errorToast: {
+    position: 'fixed',
+    bottom: '80px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    backgroundColor: '#fef2f2',
+    color: '#b91c1c',
+    border: '1px solid #fca5a5',
+    borderRadius: '10px',
+    padding: '10px 16px',
+    fontSize: '0.85rem',
+    fontWeight: '500',
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    marginBottom: '8px',
-    flexWrap: 'wrap',
+    gap: '10px',
+    zIndex: 1000,
+    boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
+    maxWidth: '340px',
+    width: '90%',
   },
-  sortLabel: {
-    fontSize: '0.75rem',
-    color: 'var(--text-muted)',
-    fontWeight: '600',
-    flexShrink: 0,
-  },
-  sortChips: {
-    display: 'flex',
-    gap: '6px',
-    flexWrap: 'wrap',
-  },
-  sortChip: {
-    fontSize: '0.72rem',
-    padding: '4px 10px',
-    borderRadius: '20px',
-    border: '1px solid var(--border-color)',
-    background: 'white',
-    color: 'var(--text-muted)',
+  errorClose: {
+    background: 'none',
+    border: 'none',
     cursor: 'pointer',
-    fontWeight: '500',
+    color: '#b91c1c',
+    fontWeight: '700',
+    padding: '0 4px',
+    marginLeft: 'auto',
+  },
+};
+
+/* ─── Status Sheet Styles ─────────────────────────────────────────────────── */
+const sheetStyles = {
+  backdrop: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    zIndex: 200,
+    backdropFilter: 'blur(2px)',
+  },
+  sheet: {
+    position: 'fixed',
+    bottom: 0,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    width: '100%',
+    maxWidth: '480px',
+    backgroundColor: 'white',
+    borderRadius: '20px 20px 0 0',
+    padding: '12px 20px 32px',
+    zIndex: 201,
+    boxShadow: '0 -4px 32px rgba(0,0,0,0.18)',
+    animation: 'slideUp 0.22s ease-out',
+  },
+  handle: {
+    width: '40px',
+    height: '4px',
+    backgroundColor: '#cbd5e1',
+    borderRadius: '4px',
+    margin: '0 auto 16px',
+  },
+  sheetTitle: {
+    fontSize: '1rem',
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: '4px',
+    color: 'var(--text-main)',
+  },
+  name: {
+    fontSize: '0.85rem',
+    color: 'var(--text-muted)',
+    textAlign: 'center',
+    marginBottom: '20px',
+  },
+  options: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    marginBottom: '16px',
+  },
+  optBtn: {
+    width: '100%',
+    padding: '13px 16px',
+    borderRadius: '12px',
+    fontSize: '0.95rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    textAlign: 'left',
     transition: 'all 0.15s',
   },
-  sortChipActive: {
-    background: 'var(--primary-color)',
-    color: 'white',
-    borderColor: 'var(--primary-color)',
-    fontWeight: '600',
-  },
-  resultSummary: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '4px',
-  },
-  resultCount: {
-    fontSize: '0.78rem',
-    color: 'var(--text-muted)',
-    fontWeight: '500',
-  },
-  activeFilter: {
-    fontSize: '0.7rem',
-    padding: '2px 8px',
+  cancelBtn: {
+    width: '100%',
+    padding: '13px',
     borderRadius: '12px',
+    background: '#f1f5f9',
+    border: 'none',
+    fontSize: '0.95rem',
     fontWeight: '600',
+    color: 'var(--text-muted)',
+    cursor: 'pointer',
   },
 };
 

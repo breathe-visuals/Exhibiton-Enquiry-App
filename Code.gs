@@ -1,4 +1,4 @@
-﻿// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
 //  Exhibition Enquiry App – Google Apps Script Backend
 //  Multi-user safe: uses LockService on all writes + random IDs to prevent
 //  race conditions when multiple users submit enquiries simultaneously.
@@ -53,6 +53,8 @@ function doPost(e) {
       result = deleteEnquiry(endpoint.split('/')[1]);
     } else if (endpoint === 'enquiries/batch-delete' && method === 'POST') {
       result = batchDeleteEnquiries(payload.ids);
+    } else if (endpoint && endpoint.startsWith('enquiry/') && method === 'PATCH') {
+      result = updateEnquiryStatus(endpoint.split('/')[1], payload.status);
     } else {
       return errResponse('Invalid endpoint or method');
     }
@@ -384,4 +386,46 @@ function _deleteDriveImages(urls) {
       Logger.log('_deleteDriveImages skipped: ' + url + ' | ' + e.message);
     }
   });
+}
+
+// ─── Update Enquiry Status (with write lock) ──────────────────────────────────
+function updateEnquiryStatus(enquiryId, newStatus) {
+  var VALID_STATUSES = ['New', 'Follow Up', 'Closed'];
+  if (!enquiryId) throw new Error('Missing enquiry ID.');
+  if (!newStatus || VALID_STATUSES.indexOf(newStatus) === -1) {
+    throw new Error('Invalid status value: ' + newStatus);
+  }
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(LOCK_TIMEOUT_MS); }
+  catch (_) { throw new Error('Server is busy. Please try again.'); }
+
+  try {
+    var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = getOrCreateSheet(ss, 'Enquiries');
+    var data  = sheet.getDataRange().getValues();
+
+    if (data.length <= 1) throw new Error('Enquiry not found: ' + enquiryId);
+
+    var headers  = data[0];
+    var idCol    = headers.indexOf('enquiry_id');
+    var statCol  = headers.indexOf('status');
+    if (idCol === -1 || statCol === -1) throw new Error('Sheet schema error: missing columns.');
+
+    var rowIndex = -1;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][idCol]) === String(enquiryId)) {
+        rowIndex = i + 1; // 1-indexed for Sheets
+        break;
+      }
+    }
+    if (rowIndex === -1) throw new Error('Enquiry not found: ' + enquiryId);
+
+    sheet.getRange(rowIndex, statCol + 1).setValue(newStatus);
+    SpreadsheetApp.flush();
+
+    return { success: true, enquiry_id: enquiryId, status: newStatus };
+  } finally {
+    lock.releaseLock();
+  }
 }

@@ -23,7 +23,7 @@ function App() {
       setError(null);
       try {
         const data = await api.getEnquiries();
-        if (!cancelled) setEnquiries(data);
+        if (!cancelled) setEnquiries(Array.isArray(data) ? data : []);
       } catch (err) {
         if (!cancelled) setError(err.message || 'Failed to load enquiries. Please try again.');
       } finally {
@@ -39,25 +39,22 @@ function App() {
    * then fire the API call in the background.
    */
   const addEnquiryOptimistic = useCallback(async (enquiryData) => {
-    // Build a temp object that looks like a saved enquiry
     const tempId = `ENQ-${Date.now()}`;
     const tempEnquiry = {
       ...enquiryData,
       enquiry_id: tempId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      status: 'New',
+      status: enquiryData.status || 'New',
     };
 
-    // Instantly prepend to list → dashboard updates immediately
     setEnquiries(prev => [tempEnquiry, ...prev]);
 
-    // Fire real API in background
     try {
       await api.createEnquiry(enquiryData);
       // Re-fetch to get server-assigned ID & any server-side transformations
       const fresh = await api.getEnquiries();
-      setEnquiries(fresh);
+      setEnquiries(Array.isArray(fresh) ? fresh : []);
     } catch (err) {
       // Rollback optimistic insert on failure
       setEnquiries(prev => prev.filter(e => e.enquiry_id !== tempId));
@@ -66,12 +63,41 @@ function App() {
   }, []);
 
   /**
+   * Optimistically update enquiry status in local state,
+   * then sync to backend. Rolls back on failure.
+   */
+  const updateStatusOptimistic = useCallback(async (id, newStatus) => {
+    // Snapshot previous state for rollback
+    let previousEnquiries;
+    setEnquiries(prev => {
+      previousEnquiries = prev;
+      return prev.map(e =>
+        e.enquiry_id === id
+          ? { ...e, status: newStatus, updated_at: new Date().toISOString() }
+          : e
+      );
+    });
+
+    try {
+      await api.updateEnquiryStatus(id, newStatus);
+    } catch (err) {
+      // Rollback on error
+      if (previousEnquiries) setEnquiries(previousEnquiries);
+      throw err;
+    }
+  }, []);
+
+  /**
    * Optimistically delete one or more enquiries.
    */
   const deleteEnquiriesOptimistic = useCallback(async (ids) => {
     const idSet = new Set(ids);
-    // Instant removal from UI
-    setEnquiries(prev => prev.filter(e => !idSet.has(e.enquiry_id)));
+    // Snapshot for rollback
+    let previousEnquiries;
+    setEnquiries(prev => {
+      previousEnquiries = prev;
+      return prev.filter(e => !idSet.has(e.enquiry_id));
+    });
 
     try {
       if (ids.length === 1) {
@@ -80,18 +106,15 @@ function App() {
         await api.deleteEnquiries(ids);
       }
     } catch (err) {
-      // On failure, re-fetch to restore correct state
-      try {
-        const fresh = await api.getEnquiries();
-        setEnquiries(fresh);
-      } catch (_) { /* silently ignore secondary failure */ }
+      // On failure, restore snapshot (avoid a second API call that could also fail)
+      if (previousEnquiries) setEnquiries(previousEnquiries);
       throw err;
     }
   }, []);
 
   const navigateTo = useCallback((route, params = {}) => {
     if (isDirty) {
-      const confirmLeave = window.confirm("You have unsaved changes. Are you sure you want to leave?");
+      const confirmLeave = window.confirm('You have unsaved changes. Are you sure you want to leave?');
       if (!confirmLeave) return;
     }
     setIsDirty(false);
@@ -130,6 +153,7 @@ function App() {
             navigateTo={navigateTo}
             enquiries={enquiries}
             onDeleteEnquiries={deleteEnquiriesOptimistic}
+            onUpdateStatus={updateStatusOptimistic}
           />
         );
       case 'new-enquiry':
@@ -147,6 +171,7 @@ function App() {
             enquiryId={selectedEnquiryId}
             enquiries={enquiries}
             onDeleteEnquiry={(id) => deleteEnquiriesOptimistic([id])}
+            onUpdateStatus={updateStatusOptimistic}
           />
         );
       case 'settings':

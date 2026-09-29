@@ -63,6 +63,20 @@ export const deleteEnquiries = (ids) => {
   return true;
 };
 
+/**
+ * Update the status of a single enquiry.
+ */
+export const updateEnquiryStatus = (id, newStatus) => {
+  const VALID = ['New', 'Follow Up', 'Closed'];
+  if (!VALID.includes(newStatus)) throw new Error('Invalid status: ' + newStatus);
+  const enquiries = getEnquiries();
+  const idx = enquiries.findIndex(e => e.enquiry_id === id);
+  if (idx === -1) throw new Error('Enquiry not found: ' + id);
+  enquiries[idx] = { ...enquiries[idx], status: newStatus, updated_at: new Date().toISOString() };
+  localStorage.setItem(ENQUIRIES_KEY, JSON.stringify(enquiries));
+  return { success: true, enquiry_id: id, status: newStatus };
+};
+
 // Generate some initial mock data if localStorage is empty
 const generateMockData = () => {
   const mockData = [

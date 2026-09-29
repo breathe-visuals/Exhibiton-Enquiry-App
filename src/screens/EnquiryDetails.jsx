@@ -1,8 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { FileDown, ZoomIn, Trash2 } from 'lucide-react';
+import { FileDown, ZoomIn, Trash2, RefreshCw } from 'lucide-react';
 import * as api from '../services/api';
 import Header from '../components/Header';
 import ImageLightbox from '../components/ImageLightbox';
+
+const STATUS_COLORS = {
+  'New':       { bg: '#e0e7ff', color: '#2563eb' },
+  'Follow Up': { bg: '#fef9c3', color: '#ca8a04' },
+  'Closed':    { bg: '#dcfce7', color: '#16a34a' },
+};
+const STATUS_LIST = ['New', 'Follow Up', 'Closed'];
 
 /* ─── PDF Export ──────────────────────────────────────────────────────────────
    Page 1 : Customer details, advance payment, business card, notes.
@@ -198,11 +205,13 @@ const exportToPDF = (enquiry) => {
 };
 
 /* ─── Component ────────────────────────────────────────────────────────────── */
-const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry }) => {
-  const [enquiry, setEnquiry]     = useState(null);
-  const [error, setError]         = useState(null);
-  const [lightboxSrc, setLightbox] = useState(null);
+const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onUpdateStatus }) => {
+  const [enquiry, setEnquiry]       = useState(null);
+  const [error, setError]           = useState(null);
+  const [lightboxSrc, setLightbox]  = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showStatusSheet, setShowStatusSheet] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,6 +253,21 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry }) =
     }
   };
 
+  const handleStatusChange = async (newStatus) => {
+    if (!onUpdateStatus) return;
+    setIsUpdatingStatus(true);
+    try {
+      await onUpdateStatus(enquiryId, newStatus);
+      // Update local state so badge re-renders instantly
+      setEnquiry(prev => prev ? { ...prev, status: newStatus } : prev);
+      setShowStatusSheet(false);
+    } catch (err) {
+      alert(err.message || 'Failed to update status. Please try again.');
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
   if (error) return (
     <div style={{ padding: '20px', textAlign: 'center', color: 'var(--danger-color)' }}>{error}</div>
   );
@@ -269,7 +293,18 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry }) =
       <div className="card">
         <div style={styles.header}>
           <h2 style={{ margin: 0 }}>{enquiry.customer_name}</h2>
-          <span style={styles.statusBadge}>{enquiry.status}</span>
+          <span
+            style={{
+              ...styles.statusBadge,
+              backgroundColor: STATUS_COLORS[enquiry.status]?.bg || '#e0e7ff',
+              color: STATUS_COLORS[enquiry.status]?.color || 'var(--primary-color)',
+              cursor: onUpdateStatus ? 'pointer' : 'default',
+            }}
+            onClick={() => onUpdateStatus && setShowStatusSheet(true)}
+            title={onUpdateStatus ? 'Tap to change status' : ''}
+          >
+            {enquiry.status}
+          </span>
         </div>
 
         <div style={styles.infoGrid}>
@@ -411,6 +446,19 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry }) =
           <FileDown size={20} />
           Export PDF
         </button>
+        {onUpdateStatus && (
+          <button
+            className="btn"
+            onClick={() => setShowStatusSheet(true)}
+            disabled={isUpdatingStatus}
+            style={styles.statusBtn}
+          >
+            {isUpdatingStatus
+              ? <div className="spinner" style={{ width: 18, height: 18, borderLeftColor: 'var(--primary-color)' }} />
+              : <RefreshCw size={18} />}
+            Status
+          </button>
+        )}
         <button
           className="btn"
           onClick={handleDelete}
@@ -423,6 +471,57 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry }) =
           Delete
         </button>
       </div>
+
+      {/* Status change sheet */}
+      {showStatusSheet && (
+        <>
+          <div
+            style={{
+              position: 'fixed', inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.4)',
+              zIndex: 200, backdropFilter: 'blur(2px)',
+            }}
+            onClick={() => !isUpdatingStatus && setShowStatusSheet(false)}
+          />
+          <div style={detailSheetStyles.sheet}>
+            <div style={detailSheetStyles.handle} />
+            <div style={detailSheetStyles.title}>Change Status</div>
+            <div style={detailSheetStyles.name}>{enquiry.customer_name}</div>
+            <div style={detailSheetStyles.options}>
+              {STATUS_LIST.map(s => {
+                const sc     = STATUS_COLORS[s];
+                const active = enquiry.status === s;
+                return (
+                  <button
+                    key={s}
+                    style={{
+                      ...detailSheetStyles.optBtn,
+                      backgroundColor: active ? sc.bg : 'transparent',
+                      border: `2px solid ${active ? sc.color : 'var(--border-color)'}`,
+                      color: active ? sc.color : 'var(--text-main)',
+                      opacity: isUpdatingStatus ? 0.6 : 1,
+                    }}
+                    disabled={isUpdatingStatus || active}
+                    onClick={() => handleStatusChange(s)}
+                  >
+                    {active && <span style={{ marginRight: '6px' }}>✓</span>}
+                    {s}
+                    {active && <span style={{ fontSize: '0.7rem', marginLeft: '6px', opacity: 0.7 }}>(current)</span>}
+                  </button>
+                );
+              })}
+            </div>
+            {isUpdatingStatus && (
+              <div style={{ textAlign: 'center', padding: '8px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>Saving…</div>
+            )}
+            <button
+              style={detailSheetStyles.cancelBtn}
+              onClick={() => setShowStatusSheet(false)}
+              disabled={isUpdatingStatus}
+            >Cancel</button>
+          </div>
+        </>
+      )}
 
       {lightboxSrc && (
         <ImageLightbox
@@ -589,6 +688,83 @@ const styles = {
     fontWeight: '600',
     gap: '6px',
   },
+  statusBtn: {
+    flex: 0,
+    minWidth: '100px',
+    backgroundColor: 'white',
+    color: 'var(--primary-color)',
+    border: '1.5px solid var(--primary-color)',
+    borderRadius: '12px',
+    fontWeight: '600',
+    gap: '6px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+};
+
+const detailSheetStyles = {
+  sheet: {
+    position: 'fixed',
+    bottom: 0,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    width: '100%',
+    maxWidth: '480px',
+    backgroundColor: 'white',
+    borderRadius: '20px 20px 0 0',
+    padding: '12px 20px 32px',
+    zIndex: 201,
+    boxShadow: '0 -4px 32px rgba(0,0,0,0.18)',
+  },
+  handle: {
+    width: '40px',
+    height: '4px',
+    backgroundColor: '#cbd5e1',
+    borderRadius: '4px',
+    margin: '0 auto 16px',
+  },
+  title: {
+    fontSize: '1rem',
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: '4px',
+    color: 'var(--text-main)',
+  },
+  name: {
+    fontSize: '0.85rem',
+    color: 'var(--text-muted)',
+    textAlign: 'center',
+    marginBottom: '20px',
+  },
+  options: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    marginBottom: '16px',
+  },
+  optBtn: {
+    width: '100%',
+    padding: '13px 16px',
+    borderRadius: '12px',
+    fontSize: '0.95rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    textAlign: 'left',
+    transition: 'all 0.15s',
+  },
+  cancelBtn: {
+    width: '100%',
+    padding: '13px',
+    borderRadius: '12px',
+    background: '#f1f5f9',
+    border: 'none',
+    fontSize: '0.95rem',
+    fontWeight: '600',
+    color: 'var(--text-muted)',
+    cursor: 'pointer',
+  },
 };
 
 export default EnquiryDetails;
+
