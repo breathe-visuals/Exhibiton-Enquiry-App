@@ -172,6 +172,19 @@ const AddProductModal = ({ isOpen, onClose, onSave, editingProduct }) => {
                   name="purity_material"
                   value={product.purity_material}
                   onChange={handleChange}
+                  placeholder="e.g. 22k Gold, 925 Silver"
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Size (optional)</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  name="size"
+                  value={product.size}
+                  onChange={handleChange}
+                  placeholder="e.g. M, L, 7 (ring), 18 inch"
                 />
               </div>
 
@@ -183,6 +196,19 @@ const AddProductModal = ({ isOpen, onClose, onSave, editingProduct }) => {
                   value={product.customer_requirement}
                   onChange={handleChange}
                   rows="2"
+                  placeholder="Specific customisation requests..."
+                ></textarea>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Internal Notes (optional)</label>
+                <textarea 
+                  className="form-textarea" 
+                  name="notes"
+                  value={product.notes}
+                  onChange={handleChange}
+                  rows="2"
+                  placeholder="Any follow-up notes for your team..."
                 ></textarea>
               </div>
             </div>
