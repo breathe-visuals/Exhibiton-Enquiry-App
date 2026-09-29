@@ -7,29 +7,40 @@ import { compressImage } from '../utils/imageUtils';
 
 const PAYMENT_MODES = ['Cash', 'RTGS', 'NEFT', 'UPI', 'Cheque', 'Card', 'Other'];
 
-const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
-  const [formData, setFormData] = useState({
-    customer_name: '',
-    mobile: '',
-    business_name: '',
-    address: '',
-    event_name: 'Gems & Jewellery Expo 2026',
-    general_notes: '',
-    business_card_url: null,
-    business_card_url_2: null,
-    advance_amount: '',
-    payment_mode: '',
-  });
+const BLANK_FORM = {
+  customer_name: '',
+  mobile: '',
+  business_name: '',
+  address: '',
+  event_name: 'Gems & Jewellery Expo 2026',
+  general_notes: '',
+  business_card_url: null,
+  business_card_url_2: null,
+  advance_amount: '',
+  payment_mode: '',
+  payment_mode_custom: '',
+};
 
+const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
+  const [formData, setFormData] = useState(BLANK_FORM);
   const [products, setProducts] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [savedOk, setSavedOk] = useState(false);   // success banner
+  const [saveError, setSaveError] = useState(null); // error banner
   const [lightboxSrc, setLightboxSrc] = useState(null);
 
   useEffect(() => {
     return () => setIsDirty(false);
   }, [setIsDirty]);
+
+  // Auto-dismiss success banner after 3 s
+  useEffect(() => {
+    if (!savedOk) return;
+    const t = setTimeout(() => setSavedOk(false), 3000);
+    return () => clearTimeout(t);
+  }, [savedOk]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -48,7 +59,6 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
         alert('Failed to process image.');
       }
     }
-    // Reset input so same file can be re-selected
     e.target.value = '';
   };
 
@@ -71,12 +81,14 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
   };
 
   const handleSaveEnquiry = async () => {
-    if (!formData.customer_name || !formData.mobile) {
+    if (!formData.customer_name.trim() || !formData.mobile.trim()) {
       alert('Customer Name and Mobile Number are required.');
       return;
     }
 
     setIsSaving(true);
+    setSaveError(null);
+    setSavedOk(false);
 
     const enquiry = {
       ...formData,
@@ -84,16 +96,18 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
       created_by: 'Current User',
     };
 
-    // Navigate instantly — don't wait for the API
-    setIsDirty(false);
-    navigateTo('dashboard');
-
-    // Fire API in background (optimistic)
     try {
-      await onSave(enquiry);
+      await onSave(enquiry);          // ← wait for the full save (API + re-fetch)
+      // ✅ Success: reset form so next enquiry can be entered right away
+      setFormData(BLANK_FORM);
+      setProducts([]);
+      setIsDirty(false);
+      setSavedOk(true);
+      // Scroll back to top so success banner is visible
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
       console.error(error);
-      alert('Failed to save enquiry on server. It may not appear after reload.');
+      setSaveError(error.message || 'Failed to save enquiry. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -152,6 +166,22 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
         showBack={true}
         onBack={() => navigateTo('dashboard')}
       />
+
+      {/* ── Success banner ───────────────────────────────────────────── */}
+      {savedOk && (
+        <div style={bannerStyles.success}>
+          <Check size={18} style={{ flexShrink: 0 }} />
+          Enquiry saved! Form reset — ready for the next one.
+        </div>
+      )}
+
+      {/* ── Error banner ─────────────────────────────────────────────── */}
+      {saveError && (
+        <div style={bannerStyles.error}>
+          <span style={{ flex: 1 }}>⚠️ {saveError}</span>
+          <button style={bannerStyles.closeBtn} onClick={() => setSaveError(null)}>✕</button>
+        </div>
+      )}
 
       {/* Visitor Details */}
       <div className="card">
@@ -320,10 +350,22 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
           className="btn btn-primary btn-block"
           onClick={handleSaveEnquiry}
           disabled={isSaving}
-          style={{ opacity: isSaving ? 0.7 : 1 }}
+          style={{
+            opacity: isSaving ? 0.75 : 1,
+            background: savedOk
+              ? 'linear-gradient(135deg, #10b981, #059669)'
+              : undefined,
+            transition: 'background 0.3s',
+          }}
         >
-          {isSaving ? <div className="spinner" style={{ width: 20, height: 20, borderLeftColor: 'white' }} /> : <Check size={20} />}
-          {isSaving ? 'Saving...' : 'Save Enquiry'}
+          {isSaving ? (
+            <div className="spinner" style={{ width: 20, height: 20, borderLeftColor: 'white' }} />
+          ) : savedOk ? (
+            <Check size={20} />
+          ) : (
+            <Check size={20} />
+          )}
+          {isSaving ? 'Saving…' : savedOk ? 'Saved! Add Another?' : 'Save Enquiry'}
         </button>
       </div>
 
@@ -498,6 +540,46 @@ const styles = {
     backgroundColor: 'white',
     borderTop: '1px solid var(--border-color)',
     zIndex: 90,
+  },
+};
+
+const bannerStyles = {
+  success: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    backgroundColor: '#f0fdf4',
+    color: '#15803d',
+    border: '1px solid #bbf7d0',
+    borderRadius: '10px',
+    padding: '12px 16px',
+    marginBottom: '14px',
+    fontSize: '0.88rem',
+    fontWeight: '600',
+    animation: 'fadeIn 0.3s ease',
+  },
+  error: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    backgroundColor: '#fef2f2',
+    color: '#b91c1c',
+    border: '1px solid #fca5a5',
+    borderRadius: '10px',
+    padding: '12px 16px',
+    marginBottom: '14px',
+    fontSize: '0.88rem',
+    fontWeight: '500',
+  },
+  closeBtn: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: '#b91c1c',
+    fontWeight: '700',
+    padding: '0 4px',
+    fontSize: '1rem',
+    flexShrink: 0,
   },
 };
 
