@@ -360,12 +360,13 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
         >
           {isSaving ? (
             <div className="spinner" style={{ width: 20, height: 20, borderLeftColor: 'white' }} />
-          ) : savedOk ? (
-            <Check size={20} />
           ) : (
             <Check size={20} />
           )}
-          {isSaving ? 'Saving…' : savedOk ? 'Saved! Add Another?' : 'Save Enquiry'}
+          {isSaving
+            ? (products.length > 0 ? `Uploading images & saving…` : 'Saving…')
+            : savedOk ? 'Saved! Add Another?'
+            : 'Save Enquiry'}
         </button>
       </div>
 

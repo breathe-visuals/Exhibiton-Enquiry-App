@@ -35,8 +35,23 @@ function App() {
   }, []);
 
   /**
+   * Helper: if the value is a base64 data URL, upload it to Drive and
+   * return the resulting Drive thumbnail URL. Otherwise pass it through.
+   */
+  const maybeUploadImage = useCallback(async (dataUrl, type) => {
+    if (!dataUrl || !dataUrl.startsWith('data:image')) return dataUrl || '';
+    // uploadImage calls the /upload endpoint which saves to the correct Drive folder
+    return api.uploadImage(dataUrl, type);
+  }, []);
+
+  /**
    * Optimistically add a new enquiry to local state immediately,
-   * then fire the API call in the background.
+   * then upload all images separately and fire the API call.
+   *
+   * WHY: Embedding large base64 strings inside the createEnquiry payload
+   * caused Apps Script POST-body size / execution-timeout failures.
+   * Uploading each image via the dedicated /upload endpoint first keeps
+   * the final createEnquiry payload small (Drive URLs only).
    */
   const addEnquiryOptimistic = useCallback(async (enquiryData) => {
     const tempId = `ENQ-${Date.now()}`;
@@ -51,7 +66,31 @@ function App() {
     setEnquiries(prev => [tempEnquiry, ...prev]);
 
     try {
-      await api.createEnquiry(enquiryData);
+      // ── 1. Pre-upload business card images ──────────────────────────────
+      const [bcUrl1, bcUrl2] = await Promise.all([
+        maybeUploadImage(enquiryData.business_card_url,   'business_card'),
+        maybeUploadImage(enquiryData.business_card_url_2, 'business_card'),
+      ]);
+
+      // ── 2. Pre-upload every product photo sequentially ──────────────────
+      //    (sequential to avoid hammering Apps Script simultaneously)
+      const uploadedProducts = [];
+      for (const p of (enquiryData.products || [])) {
+        const photoUrl = await maybeUploadImage(p.photo_url, 'product');
+        uploadedProducts.push({ ...p, photo_url: photoUrl });
+      }
+
+      // ── 3. Build clean payload (Drive URLs, no base64) ──────────────────
+      const cleanPayload = {
+        ...enquiryData,
+        business_card_url:   bcUrl1,
+        business_card_url_2: bcUrl2,
+        products: uploadedProducts,
+      };
+
+      // ── 4. Save enquiry (small JSON, no embedded images) ─────────────────
+      await api.createEnquiry(cleanPayload);
+
       // Re-fetch to get server-assigned ID & any server-side transformations
       const fresh = await api.getEnquiries();
       setEnquiries(Array.isArray(fresh) ? fresh : []);
@@ -60,7 +99,7 @@ function App() {
       setEnquiries(prev => prev.filter(e => e.enquiry_id !== tempId));
       throw err; // propagate so NewEnquiry can show the error alert
     }
-  }, []);
+  }, [maybeUploadImage]);
 
   /**
    * Optimistically update enquiry status in local state,

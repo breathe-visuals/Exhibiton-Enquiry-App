@@ -93,13 +93,13 @@ function getOrCreateSheet(ss, sheetName) {
         'enquiry_id','customer_name','mobile','business_name','address',
         'business_card_url','business_card_url_2','advance_amount',
         'payment_mode','payment_mode_custom','general_notes','event_name',
-        'created_by','created_at','status'
+        'created_by','created_at','updated_at','status'
       ]);
     } else if (sheetName === 'Products') {
       sheet.appendRow([
         'product_id','enquiry_id','photo_url','description',
         'quantity','unit','weight','purity_material',
-        'customer_requirement','created_at'
+        'size','customer_requirement','notes','created_at'
       ]);
     }
   }
@@ -189,23 +189,26 @@ function createEnquiry(enquiry) {
       enquiry.general_notes       || '',
       enquiry.event_name          || '',
       enquiry.created_by          || 'Unknown',
-      now,
-      enquiry.status              || 'New',
+      now,           // created_at  (col 14)
+      now,           // updated_at  (col 15)
+      enquiry.status || 'New',  // status  (col 16)
     ]);
 
     if (products.length > 0) {
       var rows = products.map(function(p) {
         return [
-          p.product_id            || generateId('PRD'),
+          p.product_id           || generateId('PRD'),
           enquiryId,
-          p.photo_url             || '',
-          p.description           || '',
-          p.quantity              || '',
-          p.unit                  || '',
-          p.weight                || '',
-          p.purity_material       || '',
-          p.customer_requirement  || '',
-          now,
+          p.photo_url            || '',
+          p.description          || '',
+          p.quantity             || '',
+          p.unit                 || '',
+          p.weight               || '',
+          p.purity_material      || '',
+          p.size                 || '',   // size  (col 9)
+          p.customer_requirement || '',   // customer_requirement  (col 10)
+          p.notes                || '',   // notes  (col 11)
+          now,                           // created_at  (col 12)
         ];
       });
       productsSheet
