@@ -112,13 +112,22 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
 
     try {
       await onSave(enquiry);          // ← wait for the full save (API + re-fetch)
-      // ✅ Success: reset form so next enquiry can be entered right away
-      setFormData(BLANK_FORM);
-      setProducts([]);
+      
       setIsDirty(false);
       setSavedOk(true);
-      // Scroll back to top so success banner is visible
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      
+      if (editingEnquiryId) {
+        // If editing, briefly show success then go back to details
+        setTimeout(() => {
+          navigateTo('enquiry-details', { enquiryId: editingEnquiryId });
+        }, 800);
+      } else {
+        // ✅ Success: reset form so next enquiry can be entered right away
+        setFormData(BLANK_FORM);
+        setProducts([]);
+        // Scroll back to top so success banner is visible
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     } catch (error) {
       console.error(error);
       setSaveError(error.message || 'Failed to save enquiry. Please try again.');

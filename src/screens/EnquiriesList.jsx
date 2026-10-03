@@ -346,19 +346,40 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={styles.headerRow}>
                   <h3 style={styles.customerName}>{enquiry.customer_name}</h3>
-                  {/* Status badge — tappable shortcut to open sheet */}
-                  <span
-                    style={{ ...styles.statusBadge, backgroundColor: statusStyle.bg, color: statusStyle.color }}
-                    onClick={(e) => {
-                      if (selectMode) return;
-                      e.stopPropagation(); // don't navigate
-                      cancelLongPress();
-                      setSheetEnquiry(enquiry);
-                    }}
-                    title="Tap to change status"
-                  >
-                    {enquiry.status}
-                  </span>
+                  {/* Status inline dropdown */}
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                    <select
+                      style={{
+                        appearance: 'none',
+                        WebkitAppearance: 'none',
+                        backgroundColor: statusStyle.bg,
+                        color: statusStyle.color,
+                        padding: '3px 22px 3px 10px',
+                        borderRadius: '12px',
+                        border: 'none',
+                        fontSize: '0.7rem',
+                        fontWeight: '700',
+                        cursor: selectMode ? 'default' : 'pointer',
+                        outline: 'none',
+                        fontFamily: 'inherit',
+                      }}
+                      value={enquiry.status}
+                      disabled={selectMode}
+                      onChange={(e) => {
+                        onUpdateStatus(enquiry.enquiry_id, e.target.value)
+                          .catch(err => alert(err.message || 'Failed to update'));
+                      }}
+                    >
+                      {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    {!selectMode && (
+                      <ChevronDown 
+                        size={13} 
+                        color={statusStyle.color} 
+                        style={{ position: 'absolute', right: '6px', pointerEvents: 'none' }} 
+                      />
+                    )}
+                  </div>
                 </div>
 
                 <div style={styles.detailsRow}>
@@ -389,59 +410,6 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
                   </div>
                   <div style={styles.eventLabel}>{enquiry.event_name}</div>
                 </div>
-
-                {/* Status Toggle Buttons (Collapsible) */}
-                {!selectMode && (
-                  <>
-                    <button
-                      style={styles.expandToggleBtn}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setExpandedStatusId(prev => prev === enquiry.enquiry_id ? null : enquiry.enquiry_id);
-                      }}
-                    >
-                      <span style={{ fontSize: '0.75rem', fontWeight: '600' }}>Change Status</span>
-                      {expandedStatusId === enquiry.enquiry_id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    </button>
-                    
-                    {expandedStatusId === enquiry.enquiry_id && (
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                        {STATUS_LIST.map(s => {
-                          const isSelected = enquiry.status === s;
-                          const sc = STATUS_COLORS[s];
-                          return (
-                            <button
-                              key={s}
-                              style={{
-                                flex: 1,
-                                padding: '6px 0',
-                                fontSize: '0.75rem',
-                                fontWeight: '600',
-                                border: `1px solid ${isSelected ? sc.color : 'var(--border-color)'}`,
-                                backgroundColor: isSelected ? sc.bg : 'white',
-                                color: isSelected ? sc.color : 'var(--text-muted)',
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                                transition: 'all 0.15s',
-                              }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (isSelected) return;
-                                onUpdateStatus(enquiry.enquiry_id, s)
-                                  .then(() => setExpandedStatusId(null))
-                                  .catch(err => alert(err.message || 'Failed to update'));
-                              }}
-                            >
-                              {s}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                )}
-
-
               </div>
             </div>
           );
