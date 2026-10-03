@@ -95,7 +95,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
   };
 
   const handleSaveEnquiry = async () => {
-    if (!formData.customer_name.trim() || !formData.mobile.trim()) {
+    if (!(formData.customer_name || '').trim() || !(formData.mobile || '').trim()) {
       alert('Customer Name and Mobile Number are required.');
       return;
     }
@@ -131,6 +131,8 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
     } catch (error) {
       console.error(error);
       setSaveError(error.message || 'Failed to save enquiry. Please try again.');
+      // Scroll to top so the user sees the error banner
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setIsSaving(false);
     }
