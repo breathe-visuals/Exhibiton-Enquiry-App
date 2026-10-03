@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { Search, Trash2, CheckSquare, Square, X, Building2, Phone, MapPin } from 'lucide-react';
+import { Search, Trash2, CheckSquare, Square, X, Building2, Phone, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
 
 const STATUS_COLORS = {
   'New':       { bg: '#e0e7ff', color: '#2563eb' },
@@ -82,6 +82,7 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
   const [sheetEnquiry, setSheetEnquiry] = useState(null); // the enquiry whose sheet is open
   const [isUpdating, setIsUpdating]     = useState(false);
   const [updateError, setUpdateError]   = useState(null);
+  const [expandedStatusId, setExpandedStatusId] = useState(null);
 
   // Long-press refs
   const longPressTimer = useRef(null);
@@ -389,39 +390,58 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
                   <div style={styles.eventLabel}>{enquiry.event_name}</div>
                 </div>
 
-                {/* Status Toggle Buttons */}
+                {/* Status Toggle Buttons (Collapsible) */}
                 {!selectMode && (
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                    {STATUS_LIST.map(s => {
-                      const isSelected = enquiry.status === s;
-                      const sc = STATUS_COLORS[s];
-                      return (
-                        <button
-                          key={s}
-                          style={{
-                            flex: 1,
-                            padding: '6px 0',
-                            fontSize: '0.75rem',
-                            fontWeight: '600',
-                            border: `1px solid ${isSelected ? sc.color : 'var(--border-color)'}`,
-                            backgroundColor: isSelected ? sc.bg : 'white',
-                            color: isSelected ? sc.color : 'var(--text-muted)',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s',
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (isSelected) return;
-                            onUpdateStatus(enquiry.enquiry_id, s).catch(err => alert(err.message || 'Failed to update'));
-                          }}
-                        >
-                          {s}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <>
+                    <button
+                      style={styles.expandToggleBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedStatusId(prev => prev === enquiry.enquiry_id ? null : enquiry.enquiry_id);
+                      }}
+                    >
+                      <span style={{ fontSize: '0.75rem', fontWeight: '600' }}>Change Status</span>
+                      {expandedStatusId === enquiry.enquiry_id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    
+                    {expandedStatusId === enquiry.enquiry_id && (
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                        {STATUS_LIST.map(s => {
+                          const isSelected = enquiry.status === s;
+                          const sc = STATUS_COLORS[s];
+                          return (
+                            <button
+                              key={s}
+                              style={{
+                                flex: 1,
+                                padding: '6px 0',
+                                fontSize: '0.75rem',
+                                fontWeight: '600',
+                                border: `1px solid ${isSelected ? sc.color : 'var(--border-color)'}`,
+                                backgroundColor: isSelected ? sc.bg : 'white',
+                                color: isSelected ? sc.color : 'var(--text-muted)',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s',
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isSelected) return;
+                                onUpdateStatus(enquiry.enquiry_id, s)
+                                  .then(() => setExpandedStatusId(null))
+                                  .catch(err => alert(err.message || 'Failed to update'));
+                              }}
+                            >
+                              {s}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
                 )}
+
+
               </div>
             </div>
           );
@@ -799,6 +819,20 @@ const sheetStyles = {
     fontSize: '0.95rem',
     fontWeight: '600',
     color: 'var(--text-muted)',
+    cursor: 'pointer',
+  },
+  expandToggleBtn: {
+    width: '100%',
+    marginTop: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    background: '#f8fafc',
+    border: '1px solid var(--border-color)',
+    color: 'var(--text-muted)',
+    padding: '6px',
+    borderRadius: '8px',
     cursor: 'pointer',
   },
 };

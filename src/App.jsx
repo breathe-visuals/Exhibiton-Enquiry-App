@@ -271,7 +271,7 @@ function App() {
     }
   };
 
-  const hideBottomNav = currentRoute === 'new-enquiry' || currentRoute === 'enquiry-details';
+  const hideBottomNav = currentRoute === 'new-enquiry' || currentRoute === 'enquiry-details' || currentRoute === 'edit-enquiry';
 
   return (
     <div className="app-container">
