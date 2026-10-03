@@ -96,7 +96,8 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
 
   const handleSaveEnquiry = async () => {
     if (!(formData.customer_name || '').trim() || !(formData.mobile || '').trim()) {
-      alert('Customer Name and Mobile Number are required.');
+      setSaveError('Customer Name and Mobile Number are required.');
+      try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) { window.scrollTo(0,0); }
       return;
     }
 
@@ -126,13 +127,13 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
         setFormData(BLANK_FORM);
         setProducts([]);
         // Scroll back to top so success banner is visible
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) { window.scrollTo(0,0); }
       }
     } catch (error) {
       console.error(error);
       setSaveError(error.message || 'Failed to save enquiry. Please try again.');
       // Scroll to top so the user sees the error banner
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) { window.scrollTo(0,0); }
     } finally {
       setIsSaving(false);
     }
@@ -372,8 +373,12 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
       {/* Save button */}
       <div style={styles.bottomBar}>
         <button
+          type="button"
           className="btn btn-primary btn-block"
-          onClick={handleSaveEnquiry}
+          onClick={(e) => {
+            e.preventDefault();
+            handleSaveEnquiry();
+          }}
           disabled={isSaving}
           style={{
             opacity: isSaving ? 0.75 : 1,
