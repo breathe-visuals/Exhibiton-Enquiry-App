@@ -42,7 +42,7 @@ function App() {
     if (!dataUrl || !dataUrl.startsWith('data:image')) return dataUrl || '';
     // uploadImage calls the /upload endpoint which saves to the correct Drive folder
     const res = await api.uploadImage(dataUrl, type);
-    return res.fileUrl;
+    return res;
   }, []);
 
   /**
