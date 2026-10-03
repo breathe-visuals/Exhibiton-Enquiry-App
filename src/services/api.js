@@ -74,3 +74,8 @@ export const uploadImage = async (fileBase64, type) => {
   if (USE_MOCK) return fileBase64; // return base64 as-is in mock mode
   return request('upload', 'POST', { file: fileBase64, type });
 };
+
+export const deleteImages = async (urls) => {
+  if (USE_MOCK || !urls || urls.length === 0) return { success: true };
+  return request('delete-images', 'POST', { urls });
+};

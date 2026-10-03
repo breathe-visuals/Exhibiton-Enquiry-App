@@ -65,18 +65,26 @@ function App() {
 
     setEnquiries(prev => [tempEnquiry, ...prev]);
 
+    let uploadedUrlsThisSession = [];
+
     try {
       // ── 1. Pre-upload business card images ──────────────────────────────
       const [bcUrl1, bcUrl2] = await Promise.all([
         maybeUploadImage(enquiryData.business_card_url,   'business_card'),
         maybeUploadImage(enquiryData.business_card_url_2, 'business_card'),
       ]);
+      
+      if (bcUrl1 && bcUrl1.includes('drive.google.com') && enquiryData.business_card_url !== bcUrl1) uploadedUrlsThisSession.push(bcUrl1);
+      if (bcUrl2 && bcUrl2.includes('drive.google.com') && enquiryData.business_card_url_2 !== bcUrl2) uploadedUrlsThisSession.push(bcUrl2);
 
       // ── 2. Pre-upload every product photo sequentially ──────────────────
       //    (sequential to avoid hammering Apps Script simultaneously)
       const uploadedProducts = [];
       for (const p of (enquiryData.products || [])) {
         const photoUrl = await maybeUploadImage(p.photo_url, 'product');
+        if (photoUrl && photoUrl.includes('drive.google.com') && p.photo_url !== photoUrl) {
+          uploadedUrlsThisSession.push(photoUrl);
+        }
         uploadedProducts.push({ ...p, photo_url: photoUrl });
       }
 
@@ -97,6 +105,9 @@ function App() {
     } catch (err) {
       // Rollback optimistic insert on failure
       setEnquiries(prev => prev.filter(e => e.enquiry_id !== tempId));
+      if (uploadedUrlsThisSession.length > 0) {
+        api.deleteImages(uploadedUrlsThisSession).catch(e => console.error("Failed to delete orphaned images:", e));
+      }
       throw err; // propagate so NewEnquiry can show the error alert
     }
   }, [maybeUploadImage]);
@@ -112,15 +123,23 @@ function App() {
       return prev.map(e => (e.enquiry_id === enquiryData.enquiry_id ? { ...enquiryData, updated_at: new Date().toISOString() } : e));
     });
 
+    let uploadedUrlsThisSession = [];
+
     try {
       const [bcUrl1, bcUrl2] = await Promise.all([
         maybeUploadImage(enquiryData.business_card_url,   'business_card'),
         maybeUploadImage(enquiryData.business_card_url_2, 'business_card'),
       ]);
+      
+      if (bcUrl1 && bcUrl1.includes('drive.google.com') && enquiryData.business_card_url !== bcUrl1) uploadedUrlsThisSession.push(bcUrl1);
+      if (bcUrl2 && bcUrl2.includes('drive.google.com') && enquiryData.business_card_url_2 !== bcUrl2) uploadedUrlsThisSession.push(bcUrl2);
 
       const uploadedProducts = [];
       for (const p of (enquiryData.products || [])) {
         const photoUrl = await maybeUploadImage(p.photo_url, 'product');
+        if (photoUrl && photoUrl.includes('drive.google.com') && p.photo_url !== photoUrl) {
+          uploadedUrlsThisSession.push(photoUrl);
+        }
         uploadedProducts.push({ ...p, photo_url: photoUrl });
       }
 
@@ -138,6 +157,9 @@ function App() {
       setEnquiries(Array.isArray(fresh) ? fresh : []);
     } catch (err) {
       if (previousEnquiries) setEnquiries(previousEnquiries);
+      if (uploadedUrlsThisSession.length > 0) {
+        api.deleteImages(uploadedUrlsThisSession).catch(e => console.error("Failed to delete orphaned images:", e));
+      }
       throw err;
     }
   }, [maybeUploadImage]);
