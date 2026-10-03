@@ -95,7 +95,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
   };
 
   const handleSaveEnquiry = async () => {
-    if (!(formData.customer_name || '').trim() || !(formData.mobile || '').trim()) {
+    if (!String(formData.customer_name || '').trim() || !String(formData.mobile || '').trim()) {
       setSaveError('Customer Name and Mobile Number are required.');
       try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) { window.scrollTo(0,0); }
       return;
