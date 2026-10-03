@@ -21,7 +21,7 @@ const BLANK_FORM = {
   payment_mode_custom: '',
 };
 
-const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
+const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquiries }) => {
   const [formData, setFormData] = useState(BLANK_FORM);
   const [products, setProducts] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -34,6 +34,20 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
   useEffect(() => {
     return () => setIsDirty(false);
   }, [setIsDirty]);
+
+  // Load existing data if editing
+  useEffect(() => {
+    if (editingEnquiryId && enquiries) {
+      const existing = enquiries.find(e => e.enquiry_id === editingEnquiryId);
+      if (existing) {
+        setFormData(existing);
+        setProducts(existing.products || []);
+      }
+    } else {
+      setFormData(BLANK_FORM);
+      setProducts([]);
+    }
+  }, [editingEnquiryId, enquiries]);
 
   // Auto-dismiss success banner after 3 s
   useEffect(() => {
@@ -162,9 +176,9 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
   return (
     <div style={{ paddingBottom: '80px' }}>
       <Header
-        title="New Enquiry"
+        title={editingEnquiryId ? "Edit Enquiry" : "New Enquiry"}
         showBack={true}
-        onBack={() => navigateTo('dashboard')}
+        onBack={() => navigateTo(editingEnquiryId ? 'enquiry-details' : 'dashboard')}
       />
 
       {/* ── Success banner ───────────────────────────────────────────── */}
@@ -365,8 +379,8 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave }) => {
           )}
           {isSaving
             ? (products.length > 0 ? `Uploading images & saving…` : 'Saving…')
-            : savedOk ? 'Saved! Add Another?'
-            : 'Save Enquiry'}
+            : savedOk ? (editingEnquiryId ? 'Updated!' : 'Saved! Add Another?')
+            : (editingEnquiryId ? 'Update Enquiry' : 'Save Enquiry')}
         </button>
       </div>
 

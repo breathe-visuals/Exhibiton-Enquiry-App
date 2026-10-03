@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { FileDown, ZoomIn, Trash2, RefreshCw } from 'lucide-react';
+import { FileDown, ZoomIn, Trash2, RefreshCw, Edit } from 'lucide-react';
 import * as api from '../services/api';
 import Header from '../components/Header';
 import ImageLightbox from '../components/ImageLightbox';
@@ -446,6 +446,14 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
           <FileDown size={20} />
           Export PDF
         </button>
+        <button
+          className="btn"
+          onClick={() => navigateTo('edit-enquiry', { enquiryId: enquiry.enquiry_id })}
+          style={styles.editBtn}
+        >
+          <Edit size={18} />
+          Edit
+        </button>
         {onUpdateStatus && (
           <button
             className="btn"
@@ -684,6 +692,16 @@ const styles = {
     minWidth: '100px',
     backgroundColor: 'var(--danger-color)',
     color: 'white',
+    borderRadius: '12px',
+    fontWeight: '600',
+    gap: '6px',
+  },
+  editBtn: {
+    flex: 0,
+    minWidth: '100px',
+    backgroundColor: '#f1f5f9',
+    color: '#334155',
+    border: '1px solid #cbd5e1',
     borderRadius: '12px',
     fontWeight: '600',
     gap: '6px',

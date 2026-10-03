@@ -1,8 +1,8 @@
-// ═══════════════════════════════════════════════════════════════════════════
-//  Exhibition Enquiry App – Google Apps Script Backend
+// ---------------------------------------------------------------------------
+//  Exhibition Enquiry App � Google Apps Script Backend
 //  Multi-user safe: uses LockService on all writes + random IDs to prevent
 //  race conditions when multiple users submit enquiries simultaneously.
-// ═══════════════════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------------------
 
 const SPREADSHEET_ID          = '1uLjPw-BZDsL9U9eCBeYpH-OpB3tC83spIjCATkJTWPI';
 const BUSINESS_CARD_FOLDER_ID = '1-YN7EGNGuasPAqUhtchaL-9UvBRVuD33';
@@ -11,7 +11,15 @@ const PRODUCT_IMAGE_FOLDER_ID = '1qVqxdwMrLMFUSDAbZemHigf6Y2X4rMnS';
 // How long (ms) to wait for a write lock before giving up
 const LOCK_TIMEOUT_MS = 30000;
 
-// ─── ID Generation ────────────────────────────────────────────────────────────
+// --- Safety limits -----------------------------------------------------------
+// Max base64 payload per image (~2 MB decoded → ~2.7 MB base64)
+const MAX_IMAGE_B64_CHARS = 3600000;
+// Max products per enquiry
+const MAX_PRODUCTS = 20;
+// Valid enquiry statuses
+const VALID_STATUSES = ['New', 'Follow Up', 'Closed'];
+
+// --- ID Generation ------------------------------------------------------------
 // timestamp + 6-digit random to avoid collisions between concurrent requests
 function generateId(prefix) {
   var ts   = new Date().getTime();
@@ -19,7 +27,7 @@ function generateId(prefix) {
   return prefix + '-' + ts + '-' + rand;
 }
 
-// ─── Response helpers ─────────────────────────────────────────────────────────
+// --- Response helpers ---------------------------------------------------------
 function okResponse(data) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
@@ -32,7 +40,7 @@ function errResponse(msg) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ─── Router ───────────────────────────────────────────────────────────────────
+// --- Router -------------------------------------------------------------------
 function doPost(e) {
   try {
     var endpoint    = e.parameter.endpoint;
@@ -47,6 +55,8 @@ function doPost(e) {
       result = getEnquiries();
     } else if (endpoint === 'enquiries' && method === 'POST') {
       result = createEnquiry(payload);
+    } else if (endpoint && endpoint.startsWith('enquiry/') && method === 'PUT') {
+      result = updateEnquiry(endpoint.split('/')[1], payload);
     } else if (endpoint && endpoint.startsWith('enquiry/') && method === 'GET') {
       result = getEnquiryById(endpoint.split('/')[1]);
     } else if (endpoint && endpoint.startsWith('enquiry/') && method === 'DELETE') {
@@ -61,8 +71,11 @@ function doPost(e) {
 
     return okResponse(result);
   } catch (error) {
-    Logger.log('doPost error: ' + error.message + '\n' + (error.stack || ''));
-    return errResponse(error.message || 'Internal server error');
+    var errMsg   = error.message || 'Internal server error';
+    var errStack = error.stack   || '(no stack)';
+    // Log full detail server-side only; never expose stack traces to clients
+    Logger.log('[ERROR] doPost: ' + errMsg + '\n' + errStack);
+    return errResponse(errMsg);
   }
 }
 
@@ -83,7 +96,7 @@ function doGet(e) {
   }
 }
 
-// ─── Sheet helpers ────────────────────────────────────────────────────────────
+// --- Sheet helpers ------------------------------------------------------------
 function getOrCreateSheet(ss, sheetName) {
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
@@ -117,7 +130,7 @@ function sheetToObjects(sheet) {
   });
 }
 
-// ─── Image upload ─────────────────────────────────────────────────────────────
+// --- Image upload -------------------------------------------------------------
 function handleUpload(payload) {
   var file = payload.file;
   var type = payload.type;
@@ -139,26 +152,87 @@ function _uploadBase64(base64Str, folderId) {
   );
   var folder    = DriveApp.getFolderById(folderId);
   var savedFile = folder.createFile(blob);
-  savedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  // setSharing can fail if the Google Workspace domain restricts external
+  // sharing. Wrap in try-catch so the upload always succeeds and returns
+  // a URL even when public sharing is blocked by an org policy.
+  try {
+    savedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (sharingErr) {
+    Logger.log('setSharing skipped (domain restriction?): ' + sharingErr.message);
+    // File is still accessible to the script owner - images will load in
+    // the app as long as the user is signed into the same Google account.
+  }
+
   return 'https://drive.google.com/thumbnail?id=' + savedFile.getId() + '&sz=w1000';
 }
 
 function _maybeUpload(val, type) {
-  if (!val) return '';
+  if (!val || typeof val !== 'string') return '';  // guard non-string / null
   if (val.startsWith('data:image')) {
+    // Enforce size limit before hitting Drive to prevent execution timeouts
+    if (val.length > MAX_IMAGE_B64_CHARS) {
+      throw new Error('Image is too large (max ~2 MB). Please compress it before uploading.');
+    }
     var folderId = type === 'business_card' ? BUSINESS_CARD_FOLDER_ID : PRODUCT_IMAGE_FOLDER_ID;
     return _uploadBase64(val, folderId);
   }
-  return val; // already a URL – pass through
+  return val; // already a Drive URL - pass through, no DriveApp call
 }
 
-// ─── Create Enquiry (with write lock) ─────────────────────────────────────────
+// --- Input validation ---------------------------------------------------------
+function _validateEnquiry(enquiry) {
+  if (!enquiry || typeof enquiry !== 'object') {
+    throw new Error('Invalid payload: expected an enquiry object.');
+  }
+  var name   = String(enquiry.customer_name || '').trim();
+  var mobile = String(enquiry.mobile        || '').trim();
+  if (!name)   throw new Error('customer_name is required.');
+  if (!mobile) throw new Error('mobile is required.');
+  if (!/^[0-9+\-\s()]{7,20}$/.test(mobile)) {
+    throw new Error('mobile must be 7-20 digits (numbers, +, -, spaces, parentheses).');
+  }
+  var products = enquiry.products || [];
+  if (!Array.isArray(products)) throw new Error('products must be an array.');
+  if (products.length > MAX_PRODUCTS) {
+    throw new Error('Too many products (max ' + MAX_PRODUCTS + ' per enquiry).');
+  }
+  if (enquiry.status && VALID_STATUSES.indexOf(enquiry.status) === -1) {
+    throw new Error('Invalid status: ' + enquiry.status);
+  }
+}
+
+// --- Sanitise a single text field (trim + strip control chars) ----------------
+function _sanitise(val) {
+  if (val === null || val === undefined) return '';
+  return String(val).trim().replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+}
+
+// --- Create Enquiry (with write lock) -----------------------------------------
 function createEnquiry(enquiry) {
-  // Upload images BEFORE acquiring the lock (Drive ops are slow)
-  var bcUrl1   = _maybeUpload(enquiry.business_card_url, 'business_card');
+  // 1. Validate inputs before touching Drive or Sheets
+  _validateEnquiry(enquiry);
+
+  // NOTE: The frontend pre-uploads all images via /upload before calling this.
+  // _maybeUpload here is a safety net only – if the value is already a Drive URL
+  // it is returned as-is (no DriveApp call). If it's somehow still base64 it
+  // will upload now. Either way, no DriveApp call occurs for normal Drive URLs.
+  var bcUrl1   = _maybeUpload(enquiry.business_card_url,   'business_card');
   var bcUrl2   = _maybeUpload(enquiry.business_card_url_2, 'business_card');
   var products = (enquiry.products || []).map(function(p) {
     return Object.assign({}, p, { photo_url: _maybeUpload(p.photo_url, 'product') });
+  });
+  Logger.log('createEnquiry: bcUrl1=' + (bcUrl1 ? 'set' : 'empty') + ' bcUrl2=' + (bcUrl2 ? 'set' : 'empty') + ' products=' + products.length);
+
+  // Collect all newly-uploaded Drive file IDs so we can clean them up
+  // if the Sheets write fails (prevents orphaned Drive files).
+  var uploadedUrls = [];
+  if (bcUrl1 && bcUrl1.indexOf('drive.google.com') !== -1) uploadedUrls.push(bcUrl1);
+  if (bcUrl2 && bcUrl2.indexOf('drive.google.com') !== -1) uploadedUrls.push(bcUrl2);
+  products.forEach(function(p) {
+    if (p.photo_url && p.photo_url.indexOf('drive.google.com') !== -1) {
+      uploadedUrls.push(p.photo_url);
+    }
   });
 
   var lock = LockService.getScriptLock();
@@ -175,23 +249,34 @@ function createEnquiry(enquiry) {
     var now            = new Date().toISOString();
     var enquiryId      = enquiry.enquiry_id || generateId('ENQ');
 
+    // 2. Duplicate guard: reject if this enquiry_id already exists in the sheet
+    var existing = sheetToObjects(enquiriesSheet);
+    for (var d = 0; d < existing.length; d++) {
+      if (String(existing[d].enquiry_id) === String(enquiryId)) {
+        Logger.log('Duplicate enquiry_id rejected: ' + enquiryId);
+        // Return success silently - the frontend already has the data
+        return { success: true, enquiry_id: enquiryId, duplicate: true };
+      }
+    }
+
+    // 3. Write to Sheets - if this throws, the catch block cleans up Drive files
     enquiriesSheet.appendRow([
       enquiryId,
-      enquiry.customer_name       || '',
-      enquiry.mobile              || '',
-      enquiry.business_name       || '',
-      enquiry.address             || '',
+      _sanitise(enquiry.customer_name),
+      _sanitise(enquiry.mobile),
+      _sanitise(enquiry.business_name),
+      _sanitise(enquiry.address),
       bcUrl1,
       bcUrl2,
-      enquiry.advance_amount      || '',
-      enquiry.payment_mode        || '',
-      enquiry.payment_mode_custom || '',
-      enquiry.general_notes       || '',
-      enquiry.event_name          || '',
-      enquiry.created_by          || 'Unknown',
-      now,           // created_at  (col 14)
-      now,           // updated_at  (col 15)
-      enquiry.status || 'New',  // status  (col 16)
+      _sanitise(enquiry.advance_amount),
+      _sanitise(enquiry.payment_mode),
+      _sanitise(enquiry.payment_mode_custom),
+      _sanitise(enquiry.general_notes),
+      _sanitise(enquiry.event_name),
+      _sanitise(enquiry.created_by) || 'Unknown',
+      now,                            // created_at  (col 14)
+      now,                            // updated_at  (col 15)
+      enquiry.status || 'New',        // status      (col 16)
     ]);
 
     if (products.length > 0) {
@@ -219,12 +304,129 @@ function createEnquiry(enquiry) {
     SpreadsheetApp.flush(); // commit before releasing lock
     return { success: true, enquiry_id: enquiryId };
 
+  } catch (writeErr) {
+    // 4. Orphan cleanup: Sheets write failed → trash Drive files uploaded this request
+    //    so we don't leave unreferenced files in Drive.
+    Logger.log('[ERROR] createEnquiry Sheets write failed: ' + writeErr.message + ' — cleaning up ' + uploadedUrls.length + ' Drive file(s)');
+    try { _deleteDriveImages(uploadedUrls); } catch (_) { /* best-effort */ }
+    throw writeErr; // re-throw so the client sees the real error
+
   } finally {
     lock.releaseLock();
   }
 }
 
-// ─── Read all Enquiries ────────────────────────────────────────────────────────
+// --- Update Enquiry (with write lock) -----------------------------------------
+function updateEnquiry(enquiryId, enquiry) {
+  if (!enquiryId) throw new Error('Missing enquiry ID.');
+  _validateEnquiry(enquiry);
+
+  var bcUrl1   = _maybeUpload(enquiry.business_card_url,   'business_card');
+  var bcUrl2   = _maybeUpload(enquiry.business_card_url_2, 'business_card');
+  var products = (enquiry.products || []).map(function(p) {
+    return Object.assign({}, p, { photo_url: _maybeUpload(p.photo_url, 'product') });
+  });
+
+  var uploadedUrls = [];
+  if (bcUrl1 && bcUrl1.indexOf('drive.google.com') !== -1) uploadedUrls.push(bcUrl1);
+  if (bcUrl2 && bcUrl2.indexOf('drive.google.com') !== -1) uploadedUrls.push(bcUrl2);
+  products.forEach(function(p) {
+    if (p.photo_url && p.photo_url.indexOf('drive.google.com') !== -1) {
+      uploadedUrls.push(p.photo_url);
+    }
+  });
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(LOCK_TIMEOUT_MS);
+  } catch (lockErr) {
+    throw new Error('Server is busy with another request. Please try again in a moment.');
+  }
+
+  try {
+    var ss             = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var enquiriesSheet = getOrCreateSheet(ss, 'Enquiries');
+    var productsSheet  = getOrCreateSheet(ss, 'Products');
+    var now            = new Date().toISOString();
+
+    var data  = enquiriesSheet.getDataRange().getValues();
+    if (data.length <= 1) throw new Error('Enquiry not found: ' + enquiryId);
+    
+    var headers = data[0];
+    var idCol   = headers.indexOf('enquiry_id');
+    var rowIndex = -1;
+    var createdAt = now;
+    
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][idCol]) === String(enquiryId)) {
+        rowIndex = i + 1;
+        createdAt = data[i][headers.indexOf('created_at')] || now;
+        break;
+      }
+    }
+
+    if (rowIndex === -1) {
+       throw new Error('Enquiry not found: ' + enquiryId);
+    }
+
+    var rowData = [
+      enquiryId,
+      _sanitise(enquiry.customer_name),
+      _sanitise(enquiry.mobile),
+      _sanitise(enquiry.business_name),
+      _sanitise(enquiry.address),
+      bcUrl1,
+      bcUrl2,
+      _sanitise(enquiry.advance_amount),
+      _sanitise(enquiry.payment_mode),
+      _sanitise(enquiry.payment_mode_custom),
+      _sanitise(enquiry.general_notes),
+      _sanitise(enquiry.event_name),
+      _sanitise(enquiry.created_by) || 'Unknown',
+      createdAt,
+      now,
+      enquiry.status || 'New',
+    ];
+
+    enquiriesSheet.getRange(rowIndex, 1, 1, rowData.length).setValues([rowData]);
+
+    // Update products: delete old ones, insert new ones
+    _deleteRowsById(ss, 'Products', 'enquiry_id', [enquiryId]);
+
+    if (products.length > 0) {
+      var prodRows = products.map(function(p) {
+        return [
+          p.product_id || generateId('PRD'),
+          enquiryId,
+          _sanitise(p.description),
+          _sanitise(p.quantity),
+          _sanitise(p.unit),
+          _sanitise(p.weight),
+          _sanitise(p.purity_material),
+          p.photo_url || '',
+          _sanitise(p.customer_requirement),
+          _sanitise(p.notes),
+          now
+        ];
+      });
+      productsSheet
+        .getRange(productsSheet.getLastRow() + 1, 1, prodRows.length, prodRows[0].length)
+        .setValues(prodRows);
+    }
+
+    SpreadsheetApp.flush();
+    return { success: true, enquiry_id: enquiryId };
+
+  } catch (writeErr) {
+    Logger.log('[ERROR] updateEnquiry Sheets write failed: ' + writeErr.message);
+    try { _deleteDriveImages(uploadedUrls); } catch (_) { }
+    throw writeErr;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// --- Read all Enquiries --------------------------------------------------------
 function getEnquiries() {
   var ss             = SpreadsheetApp.openById(SPREADSHEET_ID);
   var enquiriesSheet = getOrCreateSheet(ss, 'Enquiries');
@@ -233,7 +435,7 @@ function getEnquiries() {
   var enquiriesData = sheetToObjects(enquiriesSheet);
   var productsData  = sheetToObjects(productsSheet);
 
-  // Group products by enquiry_id (O(n) map instead of O(n²) nested filter)
+  // Group products by enquiry_id (O(n) map instead of O(n�) nested filter)
   var productMap = {};
   productsData.forEach(function(p) {
     var id = String(p.enquiry_id);
@@ -250,7 +452,7 @@ function getEnquiries() {
   });
 }
 
-// ─── Read single Enquiry ──────────────────────────────────────────────────────
+// --- Read single Enquiry ------------------------------------------------------
 function getEnquiryById(enquiryId) {
   var ss             = SpreadsheetApp.openById(SPREADSHEET_ID);
   var enquiriesSheet = getOrCreateSheet(ss, 'Enquiries');
@@ -273,7 +475,7 @@ function getEnquiryById(enquiryId) {
   return enquiry;
 }
 
-// ─── Delete single Enquiry (with write lock) ──────────────────────────────────
+// --- Delete single Enquiry (with write lock) ----------------------------------
 function deleteEnquiry(enquiryId) {
   var lock = LockService.getScriptLock();
   try { lock.waitLock(LOCK_TIMEOUT_MS); }
@@ -312,7 +514,7 @@ function deleteEnquiry(enquiryId) {
   }
 }
 
-// ─── Batch delete Enquiries (with write lock) ──────────────────────────────────
+// --- Batch delete Enquiries (with write lock) ----------------------------------
 function batchDeleteEnquiries(ids) {
   if (!ids || ids.length === 0) return { success: true, deleted: 0 };
 
@@ -349,7 +551,7 @@ function batchDeleteEnquiries(ids) {
   }
 }
 
-// ─── Sheet row deletion helper ────────────────────────────────────────────────
+// --- Sheet row deletion helper ------------------------------------------------
 function _deleteRowsById(ss, sheetName, colName, values) {
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) return;
@@ -371,7 +573,7 @@ function _deleteRowsById(ss, sheetName, colName, values) {
   }
 }
 
-// ─── Drive image deletion ─────────────────────────────────────────────────────
+// --- Drive image deletion -----------------------------------------------------
 function _deleteDriveImages(urls) {
   urls.forEach(function(url) {
     try {
@@ -391,7 +593,7 @@ function _deleteDriveImages(urls) {
   });
 }
 
-// ─── Update Enquiry Status (with write lock) ──────────────────────────────────
+// --- Update Enquiry Status (with write lock) ----------------------------------
 function updateEnquiryStatus(enquiryId, newStatus) {
   var VALID_STATUSES = ['New', 'Follow Up', 'Closed'];
   if (!enquiryId) throw new Error('Missing enquiry ID.');
@@ -430,5 +632,32 @@ function updateEnquiryStatus(enquiryId, newStatus) {
     return { success: true, enquiry_id: enquiryId, status: newStatus };
   } finally {
     lock.releaseLock();
+  }
+}
+
+// --- DEBUG: Test createEnquiry with a dummy payload --------------------------
+// Run this manually in the Apps Script editor to verify Sheets write works.
+function testCreateEnquiry() {
+  var dummy = {
+    customer_name:       'Test Customer',
+    mobile:              '9999999999',
+    business_name:       'Test Biz',
+    address:             'Test Address',
+    business_card_url:   '',
+    business_card_url_2: '',
+    advance_amount:      '',
+    payment_mode:        'Cash',
+    payment_mode_custom: '',
+    general_notes:       'debug test',
+    event_name:          'Test Event',
+    created_by:          'Debug',
+    status:              'New',
+    products:            []
+  };
+  try {
+    var result = createEnquiry(dummy);
+    Logger.log('testCreateEnquiry SUCCESS: ' + JSON.stringify(result));
+  } catch(e) {
+    Logger.log('testCreateEnquiry FAILED: ' + e.message + '\n' + (e.stack || ''));
   }
 }

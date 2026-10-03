@@ -60,6 +60,7 @@ const request = async (endpoint, method = 'GET', data = null, _retryCount = 0) =
 export const getEnquiries        = ()           => request('enquiries', 'GET');
 export const getEnquiryById      = (id)         => request(`enquiry/${id}`, 'GET');
 export const createEnquiry       = (data)       => request('enquiries', 'POST', data);
+export const updateEnquiry       = (id, data)   => request(`enquiry/${id}`, 'PUT', data);
 export const updateEnquiryStatus = (id, status) => request(`enquiry/${id}`, 'PATCH', { status });
 export const deleteEnquiry       = (id)         => request(`enquiry/${id}`, 'DELETE');
 export const deleteEnquiries     = (ids)        => request('enquiries/batch-delete', 'POST', { ids });

@@ -102,6 +102,47 @@ function App() {
   }, [maybeUploadImage]);
 
   /**
+   * Optimistically update an existing enquiry
+   */
+  const editEnquiryOptimistic = useCallback(async (enquiryData) => {
+    // Snapshot state for rollback
+    let previousEnquiries;
+    setEnquiries(prev => {
+      previousEnquiries = prev;
+      return prev.map(e => (e.enquiry_id === enquiryData.enquiry_id ? { ...enquiryData, updated_at: new Date().toISOString() } : e));
+    });
+
+    try {
+      const [bcUrl1, bcUrl2] = await Promise.all([
+        maybeUploadImage(enquiryData.business_card_url,   'business_card'),
+        maybeUploadImage(enquiryData.business_card_url_2, 'business_card'),
+      ]);
+
+      const uploadedProducts = [];
+      for (const p of (enquiryData.products || [])) {
+        const photoUrl = await maybeUploadImage(p.photo_url, 'product');
+        uploadedProducts.push({ ...p, photo_url: photoUrl });
+      }
+
+      const cleanPayload = {
+        ...enquiryData,
+        business_card_url:   bcUrl1,
+        business_card_url_2: bcUrl2,
+        products: uploadedProducts,
+      };
+
+      await api.updateEnquiry(cleanPayload.enquiry_id, cleanPayload);
+
+      // Re-fetch to sync
+      const fresh = await api.getEnquiries();
+      setEnquiries(Array.isArray(fresh) ? fresh : []);
+    } catch (err) {
+      if (previousEnquiries) setEnquiries(previousEnquiries);
+      throw err;
+    }
+  }, [maybeUploadImage]);
+
+  /**
    * Optimistically update enquiry status in local state,
    * then sync to backend. Rolls back on failure.
    */
@@ -201,6 +242,16 @@ function App() {
             navigateTo={navigateTo}
             setIsDirty={setIsDirty}
             onSave={addEnquiryOptimistic}
+          />
+        );
+      case 'edit-enquiry':
+        return (
+          <NewEnquiry
+            navigateTo={navigateTo}
+            setIsDirty={setIsDirty}
+            onSave={editEnquiryOptimistic}
+            editingEnquiryId={selectedEnquiryId}
+            enquiries={enquiries}
           />
         );
       case 'enquiry-details':
