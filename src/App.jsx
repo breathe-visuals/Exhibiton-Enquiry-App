@@ -41,7 +41,8 @@ function App() {
   const maybeUploadImage = useCallback(async (dataUrl, type) => {
     if (!dataUrl || !dataUrl.startsWith('data:image')) return dataUrl || '';
     // uploadImage calls the /upload endpoint which saves to the correct Drive folder
-    return api.uploadImage(dataUrl, type);
+    const res = await api.uploadImage(dataUrl, type);
+    return res.fileUrl;
   }, []);
 
   /**
