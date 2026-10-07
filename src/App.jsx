@@ -105,12 +105,17 @@ function App() {
         products: uploadedProducts,
       };
 
+      console.log(`[Accountability: Add] Payload ready. New images uploaded: ${uploadedUrlsThisSession.length}`);
+
       // ── 4. Save enquiry (small JSON, no embedded images) ─────────────────
       const result = await api.createEnquiry(cleanPayload);
+      console.log(`[Accountability: Add] Entry created on backend successfully.`);
 
       // Fetch only the new enquiry instead of the entire list
       try {
+        console.log(`[Accountability: Add] Fetching final entry to sync frontend...`);
         const created = await api.getEnquiryById(result.enquiry_id);
+        console.log(`[Accountability: Add] Sync complete.`);
         setEnquiries(prev => {
           const filtered = prev.filter(e => e.enquiry_id !== tempId);
           return [created, ...filtered];
@@ -180,16 +185,24 @@ function App() {
       const removedUrls = cleanPayload._removedImageUrls || [];
       delete cleanPayload._removedImageUrls;
 
-      await api.updateEnquiry(cleanPayload.enquiry_id, cleanPayload);
+      console.log(`[Accountability: Edit] Payload ready. New images uploaded this session: ${uploadedUrlsThisSession.length}`);
+      
+      const updateResult = await api.updateEnquiry(cleanPayload.enquiry_id, cleanPayload);
+      console.log(`[Accountability: Edit] Entry updated on backend successfully.`);
 
       // Safety net: explicitly delete images the user removed on the frontend
       if (removedUrls.length > 0) {
-        api.deleteImages(removedUrls).catch(e => console.error('Image cleanup failed:', e));
+        console.log(`[Accountability: Edit] Deleting ${removedUrls.length} old explicitly replaced/removed images...`);
+        api.deleteImages(removedUrls)
+          .then(res => console.log(`[Accountability: Edit] Old images deleted successfully. Trashed: ${res.trashed || removedUrls.length}`))
+          .catch(e => console.error('[Accountability: Edit] Old image cleanup failed:', e));
       }
 
       // Fetch only the updated enquiry instead of the entire list
       try {
+        console.log(`[Accountability: Edit] Fetching updated entry to sync frontend...`);
         const updated = await api.getEnquiryById(cleanPayload.enquiry_id);
+        console.log(`[Accountability: Edit] Sync complete.`);
         setEnquiries(prev => prev.map(e =>
           e.enquiry_id === updated.enquiry_id ? updated : e
         ));

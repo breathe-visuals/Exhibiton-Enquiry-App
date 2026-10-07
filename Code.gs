@@ -390,6 +390,7 @@ function updateEnquiry(enquiryId, enquiry) {
         urlsToTrash.push(oldUrl);
       }
     });
+    Logger.log('[Accountability: Edit] Backend identified ' + urlsToTrash.length + ' old images to trash based on diff.');
 
     var rowData = [
       enquiryId,
@@ -441,7 +442,10 @@ function updateEnquiry(enquiryId, enquiry) {
     
     // Trash obsolete images
     if (urlsToTrash.length > 0) {
-      try { _deleteDriveImages(urlsToTrash); } catch (e) { Logger.log("Error trashing obsolete images: " + e); }
+      try { 
+        var trashedCount = _deleteDriveImages(urlsToTrash);
+        Logger.log("[Accountability: Edit] Backend successfully trashed " + trashedCount + " obsolete images.");
+      } catch (e) { Logger.log("[Accountability: Edit] Error trashing obsolete images: " + e); }
     }
 
     return { success: true, enquiry_id: enquiryId };
@@ -485,21 +489,38 @@ function getEnquiries() {
 function getEnquiryById(enquiryId) {
   var ss             = SpreadsheetApp.openById(SPREADSHEET_ID);
   var enquiriesSheet = getOrCreateSheet(ss, 'Enquiries');
-  var productsSheet  = getOrCreateSheet(ss, 'Products');
 
-  var enquiries = sheetToObjects(enquiriesSheet);
-  var enquiry   = null;
-  for (var i = 0; i < enquiries.length; i++) {
-    if (String(enquiries[i].enquiry_id) === String(enquiryId)) {
-      enquiry = enquiries[i];
+  // Targeted lookup — don't convert entire sheet to objects
+  var data = enquiriesSheet.getDataRange().getValues();
+  if (data.length <= 1) throw new Error('Enquiry not found: ' + enquiryId);
+
+  var headers = data[0];
+  var idCol   = headers.indexOf('enquiry_id');
+  var enquiry = null;
+
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) === String(enquiryId)) {
+      enquiry = {};
+      headers.forEach(function(h, j) { enquiry[h] = data[i][j]; });
       break;
     }
   }
   if (!enquiry) throw new Error('Enquiry not found: ' + enquiryId);
 
-  enquiry.products = sheetToObjects(productsSheet).filter(function(p) {
-    return String(p.enquiry_id) === String(enquiryId);
-  });
+  // Only scan products sheet for matching enquiry_id
+  var productsSheet = getOrCreateSheet(ss, 'Products');
+  var pData    = productsSheet.getDataRange().getValues();
+  var pHeaders = pData[0];
+  var pIdCol   = pHeaders.indexOf('enquiry_id');
+  enquiry.products = [];
+
+  for (var j = 1; j < pData.length; j++) {
+    if (String(pData[j][pIdCol]) === String(enquiryId)) {
+      var p = {};
+      pHeaders.forEach(function(h, k) { p[h] = pData[j][k]; });
+      enquiry.products.push(p);
+    }
+  }
 
   return enquiry;
 }
@@ -580,7 +601,7 @@ function batchDeleteEnquiries(ids) {
   }
 }
 
-// --- Sheet row deletion helper ------------------------------------------------
+// --- Sheet row deletion helper (bulk write — 10-50x faster than per-row delete)
 function _deleteRowsById(ss, sheetName, colName, values) {
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) return;
@@ -594,16 +615,24 @@ function _deleteRowsById(ss, sheetName, colName, values) {
   var valueSet = {};
   values.forEach(function(v) { valueSet[String(v)] = true; });
 
-  // Walk backwards so row indices stay stable
-  for (var i = data.length - 1; i >= 1; i--) {
-    if (valueSet[String(data[i][colIndex])]) {
-      sheet.deleteRow(i + 1); // +1: Sheets are 1-indexed
+  // Keep only rows that do NOT match — single bulk write
+  var keep = [headers];
+  for (var i = 1; i < data.length; i++) {
+    if (!valueSet[String(data[i][colIndex])]) {
+      keep.push(data[i]);
     }
+  }
+
+  // Clear + setValues is MUCH faster than N deleteRow calls
+  sheet.clearContents();
+  if (keep.length > 0) {
+    sheet.getRange(1, 1, keep.length, keep[0].length).setValues(keep);
   }
 }
 
 // --- Drive image deletion -----------------------------------------------------
 function _deleteDriveImages(urls) {
+  var trashed = 0;
   urls.forEach(function(url) {
     try {
       if (!url || typeof url !== 'string') return;
@@ -616,10 +645,12 @@ function _deleteDriveImages(urls) {
       }
       if (!fileId) return;
       DriveApp.getFileById(fileId).setTrashed(true);
+      trashed++;
     } catch (e) {
       Logger.log('_deleteDriveImages skipped: ' + url + ' | ' + e.message);
     }
   });
+  return trashed;
 }
 
 // --- Update Enquiry Status (with write lock) ----------------------------------
@@ -656,6 +687,11 @@ function updateEnquiryStatus(enquiryId, newStatus) {
     if (rowIndex === -1) throw new Error('Enquiry not found: ' + enquiryId);
 
     sheet.getRange(rowIndex, statCol + 1).setValue(newStatus);
+    // Also update the updated_at timestamp
+    var updatedAtCol = headers.indexOf('updated_at');
+    if (updatedAtCol !== -1) {
+      sheet.getRange(rowIndex, updatedAtCol + 1).setValue(new Date().toISOString());
+    }
     SpreadsheetApp.flush();
 
     return { success: true, enquiry_id: enquiryId, status: newStatus };

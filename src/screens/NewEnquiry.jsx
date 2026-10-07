@@ -70,6 +70,11 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
     if (file) {
       try {
         const compressedDataUrl = await compressImage(file);
+        // Track the old image if it's a Drive URL to ensure it gets deleted
+        const oldUrl = formData[slot];
+        if (oldUrl && typeof oldUrl === 'string' && oldUrl.includes('drive.google.com')) {
+          setRemovedImageUrls(prev => [...prev, oldUrl]);
+        }
         setFormData(prev => ({ ...prev, [slot]: compressedDataUrl }));
         setIsDirty(true);
       } catch (err) {
