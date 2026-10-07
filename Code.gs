@@ -667,6 +667,13 @@ function _deleteRowsById(ss, sheetName, colName, values) {
 }
 
 // --- Drive image deletion -----------------------------------------------------
+function handleDeleteImages(payload) {
+  var urls = payload.urls;
+  if (!urls || !urls.length) return { success: true, trashed: 0 };
+  var count = _deleteDriveImages(urls);
+  return { success: true, trashed: count };
+}
+
 function _deleteDriveImages(urls) {
   var trashed = 0;
   urls.forEach(function(url) {
