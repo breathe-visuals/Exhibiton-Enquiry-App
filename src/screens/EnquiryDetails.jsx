@@ -378,6 +378,7 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
                     style={{ ...styles.businessCard, cursor: 'zoom-in' }}
                     onClick={() => openLightbox(c.url)}
                     loading="lazy"
+                    onError={(e) => { e.target.style.opacity = '0.3'; }}
                   />
                   <button style={styles.zoomOverlay} onClick={() => openLightbox(c.url)} aria-label="Expand image">
                     <ZoomIn size={16} color="white" />
@@ -413,6 +414,7 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
                   style={{ ...styles.productImg, cursor: 'zoom-in' }}
                   onClick={() => openLightbox(product.photo_url)}
                   loading="lazy"
+                  onError={(e) => { e.target.style.opacity = '0.3'; }}
                 />
                 <button style={styles.zoomOverlay} onClick={() => openLightbox(product.photo_url)} aria-label="Expand product image">
                   <ZoomIn size={16} color="white" />

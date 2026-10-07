@@ -148,10 +148,18 @@ function App() {
         ...enquiryData,
         business_card_url:   bcUrl1,
         business_card_url_2: bcUrl2,
-        products: uploadedProducts,
+        products: uploadedProducts.map(({ _oldPhotoUrl, ...rest }) => rest),
       };
+      // Strip internal tracking fields before sending to backend
+      const removedUrls = cleanPayload._removedImageUrls || [];
+      delete cleanPayload._removedImageUrls;
 
       await api.updateEnquiry(cleanPayload.enquiry_id, cleanPayload);
+
+      // Safety net: explicitly delete images the user removed on the frontend
+      if (removedUrls.length > 0) {
+        api.deleteImages(removedUrls).catch(e => console.error('Image cleanup failed:', e));
+      }
 
       // Re-fetch to sync
       const fresh = await api.getEnquiries();

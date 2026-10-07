@@ -55,6 +55,8 @@ function doPost(e) {
       result = getEnquiries();
     } else if (endpoint === 'enquiries' && method === 'POST') {
       result = createEnquiry(payload);
+    } else if (endpoint === 'delete-images' && method === 'POST') {
+      result = handleDeleteImages(payload);
     } else if (endpoint && endpoint.startsWith('enquiry/') && method === 'PUT') {
       result = updateEnquiry(endpoint.split('/')[1], payload);
     } else if (endpoint && endpoint.startsWith('enquiry/') && method === 'GET') {
@@ -166,6 +168,7 @@ function _uploadBase64(base64Str, folderId) {
 
   return 'https://drive.google.com/thumbnail?id=' + savedFile.getId() + '&sz=w1000';
 }
+var _newlyUploadedUrls = [];
 
 function _maybeUpload(val, type) {
   if (!val || typeof val !== 'string') return '';  // guard non-string / null
@@ -175,7 +178,9 @@ function _maybeUpload(val, type) {
       throw new Error('Image is too large (max ~2 MB). Please compress it before uploading.');
     }
     var folderId = type === 'business_card' ? BUSINESS_CARD_FOLDER_ID : PRODUCT_IMAGE_FOLDER_ID;
-    return _uploadBase64(val, folderId);
+    var url = _uploadBase64(val, folderId);
+    _newlyUploadedUrls.push(url);
+    return url;
   }
   return val; // already a Drive URL - pass through, no DriveApp call
 }
@@ -210,6 +215,7 @@ function _sanitise(val) {
 
 // --- Create Enquiry (with write lock) -----------------------------------------
 function createEnquiry(enquiry) {
+  _newlyUploadedUrls = []; // reset per-invocation tracker
   // 1. Validate inputs before touching Drive or Sheets
   _validateEnquiry(enquiry);
 
@@ -223,17 +229,6 @@ function createEnquiry(enquiry) {
     return Object.assign({}, p, { photo_url: _maybeUpload(p.photo_url, 'product') });
   });
   Logger.log('createEnquiry: bcUrl1=' + (bcUrl1 ? 'set' : 'empty') + ' bcUrl2=' + (bcUrl2 ? 'set' : 'empty') + ' products=' + products.length);
-
-  // Collect all newly-uploaded Drive file IDs so we can clean them up
-  // if the Sheets write fails (prevents orphaned Drive files).
-  var uploadedUrls = [];
-  if (bcUrl1 && bcUrl1.indexOf('drive.google.com') !== -1) uploadedUrls.push(bcUrl1);
-  if (bcUrl2 && bcUrl2.indexOf('drive.google.com') !== -1) uploadedUrls.push(bcUrl2);
-  products.forEach(function(p) {
-    if (p.photo_url && p.photo_url.indexOf('drive.google.com') !== -1) {
-      uploadedUrls.push(p.photo_url);
-    }
-  });
 
   var lock = LockService.getScriptLock();
   try {
@@ -305,10 +300,9 @@ function createEnquiry(enquiry) {
     return { success: true, enquiry_id: enquiryId };
 
   } catch (writeErr) {
-    // 4. Orphan cleanup: Sheets write failed → trash Drive files uploaded this request
-    //    so we don't leave unreferenced files in Drive.
-    Logger.log('[ERROR] createEnquiry Sheets write failed: ' + writeErr.message + ' — cleaning up ' + uploadedUrls.length + ' Drive file(s)');
-    try { _deleteDriveImages(uploadedUrls); } catch (_) { /* best-effort */ }
+    // 4. Orphan cleanup: Sheets write failed → trash ONLY Drive files uploaded by THIS script execution
+    Logger.log('[ERROR] createEnquiry Sheets write failed: ' + writeErr.message + ' — cleaning up ' + _newlyUploadedUrls.length + ' newly uploaded Drive file(s)');
+    try { _deleteDriveImages(_newlyUploadedUrls); } catch (_) { /* best-effort */ }
     throw writeErr; // re-throw so the client sees the real error
 
   } finally {
@@ -318,6 +312,7 @@ function createEnquiry(enquiry) {
 
 // --- Update Enquiry (with write lock) -----------------------------------------
 function updateEnquiry(enquiryId, enquiry) {
+  _newlyUploadedUrls = []; // reset per-invocation tracker
   if (!enquiryId) throw new Error('Missing enquiry ID.');
   _validateEnquiry(enquiry);
 
@@ -327,12 +322,13 @@ function updateEnquiry(enquiryId, enquiry) {
     return Object.assign({}, p, { photo_url: _maybeUpload(p.photo_url, 'product') });
   });
 
+  // Collect ALL drive URLs currently in the payload so we can diff later
   var uploadedUrls = [];
-  if (bcUrl1 && bcUrl1.indexOf('drive.google.com') !== -1) uploadedUrls.push(bcUrl1);
-  if (bcUrl2 && bcUrl2.indexOf('drive.google.com') !== -1) uploadedUrls.push(bcUrl2);
+  if (bcUrl1 && String(bcUrl1).indexOf('drive.google.com') !== -1) uploadedUrls.push(String(bcUrl1));
+  if (bcUrl2 && String(bcUrl2).indexOf('drive.google.com') !== -1) uploadedUrls.push(String(bcUrl2));
   products.forEach(function(p) {
-    if (p.photo_url && p.photo_url.indexOf('drive.google.com') !== -1) {
-      uploadedUrls.push(p.photo_url);
+    if (p.photo_url && String(p.photo_url).indexOf('drive.google.com') !== -1) {
+      uploadedUrls.push(String(p.photo_url));
     }
   });
 
@@ -369,6 +365,32 @@ function updateEnquiry(enquiryId, enquiry) {
        throw new Error('Enquiry not found: ' + enquiryId);
     }
 
+    // Capture old state to calculate which Drive images to trash
+    var oldBc1 = data[rowIndex - 1][headers.indexOf('business_card_url')];
+    var oldBc2 = data[rowIndex - 1][headers.indexOf('business_card_url_2')];
+    
+    var oldProductsData = sheetToObjects(productsSheet).filter(function(p) {
+      return String(p.enquiry_id) === String(enquiryId);
+    });
+
+    var oldDriveUrls = [];
+    if (oldBc1 && String(oldBc1).indexOf('drive.google.com') !== -1) oldDriveUrls.push(String(oldBc1));
+    if (oldBc2 && String(oldBc2).indexOf('drive.google.com') !== -1) oldDriveUrls.push(String(oldBc2));
+    oldProductsData.forEach(function(p) {
+      if (p.photo_url && String(p.photo_url).indexOf('drive.google.com') !== -1) {
+        oldDriveUrls.push(String(p.photo_url));
+      }
+    });
+
+    // We have uploadedUrls which represents ALL Drive images in the incoming payload.
+    // Diff: Any url in oldDriveUrls that is NOT in uploadedUrls has been deleted/replaced.
+    var urlsToTrash = [];
+    oldDriveUrls.forEach(function(oldUrl) {
+      if (uploadedUrls.indexOf(oldUrl) === -1) {
+        urlsToTrash.push(oldUrl);
+      }
+    });
+
     var rowData = [
       enquiryId,
       _sanitise(enquiry.customer_name),
@@ -398,12 +420,13 @@ function updateEnquiry(enquiryId, enquiry) {
         return [
           p.product_id || generateId('PRD'),
           enquiryId,
+          p.photo_url || '',
           _sanitise(p.description),
           _sanitise(p.quantity),
           _sanitise(p.unit),
           _sanitise(p.weight),
           _sanitise(p.purity_material),
-          p.photo_url || '',
+          _sanitise(p.size) || '',
           _sanitise(p.customer_requirement),
           _sanitise(p.notes),
           now
@@ -415,11 +438,17 @@ function updateEnquiry(enquiryId, enquiry) {
     }
 
     SpreadsheetApp.flush();
+    
+    // Trash obsolete images
+    if (urlsToTrash.length > 0) {
+      try { _deleteDriveImages(urlsToTrash); } catch (e) { Logger.log("Error trashing obsolete images: " + e); }
+    }
+
     return { success: true, enquiry_id: enquiryId };
 
   } catch (writeErr) {
     Logger.log('[ERROR] updateEnquiry Sheets write failed: ' + writeErr.message);
-    try { _deleteDriveImages(uploadedUrls); } catch (_) { }
+    try { _deleteDriveImages(_newlyUploadedUrls); } catch (_) { }
     throw writeErr;
   } finally {
     lock.releaseLock();
@@ -660,4 +689,10 @@ function testCreateEnquiry() {
   } catch(e) {
     Logger.log('testCreateEnquiry FAILED: ' + e.message + '\n' + (e.stack || ''));
   }
+}
+
+function handleDeleteImages(payload) {
+  var urls = payload.urls || [];
+  var count = _deleteDriveImages(urls);
+  return { success: true, trashed: count };
 }

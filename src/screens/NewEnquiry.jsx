@@ -30,6 +30,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
   const [savedOk, setSavedOk] = useState(false);   // success banner
   const [saveError, setSaveError] = useState(null); // error banner
   const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [removedImageUrls, setRemovedImageUrls] = useState([]);
 
   useEffect(() => {
     return () => setIsDirty(false);
@@ -77,6 +78,11 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
   };
 
   const handleSaveProduct = (product) => {
+    // Track old Drive photo URLs for cleanup
+    if (product._oldPhotoUrl) {
+      setRemovedImageUrls(prev => [...prev, product._oldPhotoUrl]);
+      delete product._oldPhotoUrl;
+    }
     if (editingProduct) {
       setProducts(products.map(p => p.product_id === product.product_id ? product : p));
     } else {
@@ -89,6 +95,10 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
 
   const deleteProduct = (id) => {
     if (window.confirm('Are you sure you want to remove this product?')) {
+      const removedProduct = products.find(p => p.product_id === id);
+      if (removedProduct?.photo_url?.includes?.('drive.google.com')) {
+        setRemovedImageUrls(prev => [...prev, removedProduct.photo_url]);
+      }
       setProducts(products.filter(p => p.product_id !== id));
       setIsDirty(true);
     }
@@ -109,6 +119,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
       ...formData,
       products,
       created_by: 'Current User',
+      _removedImageUrls: removedImageUrls,
     };
 
     try {
@@ -126,6 +137,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
         // ✅ Success: reset form so next enquiry can be entered right away
         setFormData(BLANK_FORM);
         setProducts([]);
+        setRemovedImageUrls([]);
         // Scroll back to top so success banner is visible
         try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) { window.scrollTo(0,0); }
       }
@@ -163,7 +175,13 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
             </div>
             <button
               className="btn btn-secondary mt-sm"
-              onClick={() => setFormData(p => ({ ...p, [slotKey]: null }))}
+              onClick={() => {
+                const oldUrl = formData[slotKey];
+                if (oldUrl && typeof oldUrl === 'string' && oldUrl.includes('drive.google.com')) {
+                  setRemovedImageUrls(prev => [...prev, oldUrl]);
+                }
+                setFormData(p => ({ ...p, [slotKey]: null }));
+              }}
             >
               <X size={16} /> Remove
             </button>
@@ -332,7 +350,9 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
             {products.map(p => (
               <div key={p.product_id} style={styles.productCard}>
                 <div style={{ position: 'relative' }}>
-                  <img src={p.photo_url} alt="Product" style={styles.productImg} loading="lazy" />
+                  <img src={p.photo_url} alt="Product" style={styles.productImg} loading="lazy"
+                    onError={(e) => { e.target.style.opacity = '0.3'; }}
+                  />
                   <button
                     style={styles.productZoomBtn}
                     onClick={() => setLightboxSrc(p.photo_url)}

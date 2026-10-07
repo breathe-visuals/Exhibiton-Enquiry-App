@@ -34,6 +34,10 @@ const AddProductModal = ({ isOpen, onClose, onSave, editingProduct }) => {
     const file = e.target.files[0];
     if (file) {
       try {
+        // Track old Drive URL for cleanup when replacing
+        if (product.photo_url && typeof product.photo_url === 'string' && product.photo_url.includes('drive.google.com')) {
+          setProduct(prev => ({ ...prev, _oldPhotoUrl: prev.photo_url }));
+        }
         const compressedDataUrl = await compressImage(file);
         setPreview(compressedDataUrl);
         setProduct(prev => ({ ...prev, photo_url: compressedDataUrl }));
@@ -79,11 +83,21 @@ const AddProductModal = ({ isOpen, onClose, onSave, editingProduct }) => {
           <div style={styles.photoContainer}>
             {preview ? (
               <div style={styles.previewWrapper}>
-                <img src={preview} alt="Product" style={{ ...styles.previewImg, cursor: 'zoom-in' }} onClick={() => setLightboxOpen(true)} />
+                <img src={preview} alt="Product" style={{ ...styles.previewImg, cursor: 'zoom-in' }} onClick={() => setLightboxOpen(true)}
+                  onError={(e) => { e.target.style.opacity = '0.3'; }}
+                />
                 {/* Remove button */}
                 <button 
                   style={styles.removePhotoBtn}
-                  onClick={() => { setPreview(null); setProduct(prev => ({ ...prev, photo_url: null })); }}
+                  onClick={() => {
+                    if (product.photo_url && typeof product.photo_url === 'string' && product.photo_url.includes('drive.google.com')) {
+                      setProduct(prev => ({ ...prev, photo_url: null, _oldPhotoUrl: prev.photo_url }));
+                    } else {
+                      setProduct(prev => ({ ...prev, photo_url: null }));
+                    }
+                    setPreview(null);
+                    setIsDirty(true);
+                  }}
                 >
                   <X size={16} />
                 </button>
