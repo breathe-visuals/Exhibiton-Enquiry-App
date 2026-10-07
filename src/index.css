@@ -168,6 +168,7 @@ p { color: var(--text-muted); }
   border-left-color: var(--primary-color);
   animation: spin 1s ease infinite;
   display: inline-block;
+  will-change: transform;
 }
 @keyframes spin {
   0% { transform: rotate(0deg); }

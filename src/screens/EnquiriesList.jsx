@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Search, Trash2, CheckSquare, Square, X, Building2, Phone, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -22,7 +22,7 @@ const SORT_OPTIONS = [
 const LONG_PRESS_DELAY = 500;
 
 /* ─── Status Action Sheet ─────────────────────────────────────────────────── */
-const StatusSheet = ({ enquiry, onClose, onSelect, isUpdating }) => (
+const StatusSheet = React.memo(({ enquiry, onClose, onSelect, isUpdating }) => (
   <>
     {/* Backdrop */}
     <div style={sheetStyles.backdrop} onClick={onClose} />
@@ -67,10 +67,11 @@ const StatusSheet = ({ enquiry, onClose, onSelect, isUpdating }) => (
       <button style={sheetStyles.cancelBtn} onClick={onClose} disabled={isUpdating}>Cancel</button>
     </div>
   </>
-);
+));
 
 /* ─── Main Component ─────────────────────────────────────────────────────── */
 const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatus }) => {
+  const [rawSearch, setRawSearch]       = useState('');
   const [searchTerm, setSearchTerm]     = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [sortBy, setSortBy]             = useState('newest');
@@ -87,6 +88,12 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
   // Long-press refs
   const longPressTimer = useRef(null);
   const longPressFired = useRef(false);
+
+  // Debounce search input — avoids filtering on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(rawSearch), 200);
+    return () => clearTimeout(timer);
+  }, [rawSearch]);
 
   /* ── Filtering & sorting ─────────────────────────────────────────────── */
   const filteredEnquiries = React.useMemo(() => {
@@ -231,8 +238,8 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
             placeholder="Search name, mobile..."
             className="form-input"
             style={styles.searchInput}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={rawSearch}
+            onChange={(e) => setRawSearch(e.target.value)}
           />
         </div>
         <select

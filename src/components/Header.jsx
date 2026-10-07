@@ -1,7 +1,7 @@
 import React from 'react';
 import { ChevronLeft } from 'lucide-react';
 
-const Header = ({ title, showBack, onBack, rightElement }) => {
+const Header = React.memo(({ title, showBack, onBack, rightElement }) => {
   return (
     <div style={styles.header}>
       <div style={styles.left}>
@@ -19,7 +19,7 @@ const Header = ({ title, showBack, onBack, rightElement }) => {
       </div>
     </div>
   );
-};
+});
 
 const styles = {
   header: {

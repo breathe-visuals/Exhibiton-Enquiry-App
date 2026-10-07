@@ -78,15 +78,23 @@ function App() {
       if (bcUrl1 && bcUrl1.includes('drive.google.com') && enquiryData.business_card_url !== bcUrl1) uploadedUrlsThisSession.push(bcUrl1);
       if (bcUrl2 && bcUrl2.includes('drive.google.com') && enquiryData.business_card_url_2 !== bcUrl2) uploadedUrlsThisSession.push(bcUrl2);
 
-      // ── 2. Pre-upload every product photo sequentially ──────────────────
-      //    (sequential to avoid hammering Apps Script simultaneously)
+      // ── 2. Pre-upload product photos in parallel batches of 3 ────────────
+      const UPLOAD_CONCURRENCY = 3;
       const uploadedProducts = [];
-      for (const p of (enquiryData.products || [])) {
-        const photoUrl = await maybeUploadImage(p.photo_url, 'product');
-        if (photoUrl && photoUrl.includes('drive.google.com') && p.photo_url !== photoUrl) {
-          uploadedUrlsThisSession.push(photoUrl);
-        }
-        uploadedProducts.push({ ...p, photo_url: photoUrl });
+      const productList = enquiryData.products || [];
+
+      for (let i = 0; i < productList.length; i += UPLOAD_CONCURRENCY) {
+        const batch = productList.slice(i, i + UPLOAD_CONCURRENCY);
+        const results = await Promise.all(
+          batch.map(async (p) => {
+            const photoUrl = await maybeUploadImage(p.photo_url, 'product');
+            if (photoUrl && photoUrl.includes('drive.google.com') && p.photo_url !== photoUrl) {
+              uploadedUrlsThisSession.push(photoUrl);
+            }
+            return { ...p, photo_url: photoUrl };
+          })
+        );
+        uploadedProducts.push(...results);
       }
 
       // ── 3. Build clean payload (Drive URLs, no base64) ──────────────────
@@ -98,11 +106,20 @@ function App() {
       };
 
       // ── 4. Save enquiry (small JSON, no embedded images) ─────────────────
-      await api.createEnquiry(cleanPayload);
+      const result = await api.createEnquiry(cleanPayload);
 
-      // Re-fetch to get server-assigned ID & any server-side transformations
-      const fresh = await api.getEnquiries();
-      setEnquiries(Array.isArray(fresh) ? fresh : []);
+      // Fetch only the new enquiry instead of the entire list
+      try {
+        const created = await api.getEnquiryById(result.enquiry_id);
+        setEnquiries(prev => {
+          const filtered = prev.filter(e => e.enquiry_id !== tempId);
+          return [created, ...filtered];
+        });
+      } catch (_) {
+        // Fallback: full re-fetch if single-fetch fails
+        const fresh = await api.getEnquiries();
+        setEnquiries(Array.isArray(fresh) ? fresh : []);
+      }
     } catch (err) {
       // Rollback optimistic insert on failure
       setEnquiries(prev => prev.filter(e => e.enquiry_id !== tempId));
@@ -136,12 +153,21 @@ function App() {
       if (bcUrl2 && bcUrl2.includes('drive.google.com') && enquiryData.business_card_url_2 !== bcUrl2) uploadedUrlsThisSession.push(bcUrl2);
 
       const uploadedProducts = [];
-      for (const p of (enquiryData.products || [])) {
-        const photoUrl = await maybeUploadImage(p.photo_url, 'product');
-        if (photoUrl && photoUrl.includes('drive.google.com') && p.photo_url !== photoUrl) {
-          uploadedUrlsThisSession.push(photoUrl);
-        }
-        uploadedProducts.push({ ...p, photo_url: photoUrl });
+      const productList = enquiryData.products || [];
+      const UPLOAD_CONCURRENCY = 3;
+
+      for (let i = 0; i < productList.length; i += UPLOAD_CONCURRENCY) {
+        const batch = productList.slice(i, i + UPLOAD_CONCURRENCY);
+        const results = await Promise.all(
+          batch.map(async (p) => {
+            const photoUrl = await maybeUploadImage(p.photo_url, 'product');
+            if (photoUrl && photoUrl.includes('drive.google.com') && p.photo_url !== photoUrl) {
+              uploadedUrlsThisSession.push(photoUrl);
+            }
+            return { ...p, photo_url: photoUrl };
+          })
+        );
+        uploadedProducts.push(...results);
       }
 
       const cleanPayload = {
@@ -161,9 +187,17 @@ function App() {
         api.deleteImages(removedUrls).catch(e => console.error('Image cleanup failed:', e));
       }
 
-      // Re-fetch to sync
-      const fresh = await api.getEnquiries();
-      setEnquiries(Array.isArray(fresh) ? fresh : []);
+      // Fetch only the updated enquiry instead of the entire list
+      try {
+        const updated = await api.getEnquiryById(cleanPayload.enquiry_id);
+        setEnquiries(prev => prev.map(e =>
+          e.enquiry_id === updated.enquiry_id ? updated : e
+        ));
+      } catch (_) {
+        // Fallback: full re-fetch if single-fetch fails
+        const fresh = await api.getEnquiries();
+        setEnquiries(Array.isArray(fresh) ? fresh : []);
+      }
     } catch (err) {
       if (previousEnquiries) setEnquiries(previousEnquiries);
       if (uploadedUrlsThisSession.length > 0) {

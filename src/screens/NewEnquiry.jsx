@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Image as ImageIcon, Check, X, Plus, ZoomIn } from 'lucide-react';
 import Header from '../components/Header';
 import AddProductModal from './AddProductModal';
@@ -31,6 +31,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
   const [saveError, setSaveError] = useState(null); // error banner
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [removedImageUrls, setRemovedImageUrls] = useState([]);
+  const saveInProgress = useRef(false); // double-submit guard
 
   useEffect(() => {
     return () => setIsDirty(false);
@@ -43,6 +44,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
       if (existing) {
         setFormData(existing);
         setProducts(existing.products || []);
+        setRemovedImageUrls([]);
       }
     } else {
       setFormData(BLANK_FORM);
@@ -105,12 +107,14 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
   };
 
   const handleSaveEnquiry = async () => {
+    if (saveInProgress.current) return; // prevent double-tap
     if (!String(formData.customer_name || '').trim() || !String(formData.mobile || '').trim()) {
       setSaveError('Customer Name and Mobile Number are required.');
       try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) { window.scrollTo(0,0); }
       return;
     }
 
+    saveInProgress.current = true;
     setIsSaving(true);
     setSaveError(null);
     setSavedOk(false);
@@ -148,6 +152,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
       try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) { window.scrollTo(0,0); }
     } finally {
       setIsSaving(false);
+      saveInProgress.current = false;
     }
   };
 

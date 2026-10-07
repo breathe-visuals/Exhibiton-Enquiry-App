@@ -1,7 +1,7 @@
 import React from 'react';
 import { Home, List, Settings } from 'lucide-react';
 
-const BottomNav = ({ currentRoute, navigateTo }) => {
+const BottomNav = React.memo(({ currentRoute, navigateTo }) => {
   return (
     <div style={styles.nav}>
       <button 
@@ -27,7 +27,7 @@ const BottomNav = ({ currentRoute, navigateTo }) => {
       </button>
     </div>
   );
-};
+});
 
 const styles = {
   nav: {
