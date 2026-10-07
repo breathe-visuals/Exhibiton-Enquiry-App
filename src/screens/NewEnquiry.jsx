@@ -5,7 +5,7 @@ import AddProductModal from './AddProductModal';
 import ImageLightbox from '../components/ImageLightbox';
 import ImageCaptureSlot from '../components/ImageCaptureSlot';
 import ProductListManager from '../components/ProductListManager';
-import { compressImage } from '../utils/imageUtils';
+import { compressImage, cropBusinessCard } from '../utils/imageUtils';
 
 const PAYMENT_MODES = ['Cash', 'RTGS', 'NEFT', 'UPI', 'Cheque', 'Card', 'Other'];
 
@@ -72,13 +72,13 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
     const file = e.target.files[0];
     if (file) {
       try {
-        const compressedDataUrl = await compressImage(file);
+        const processedDataUrl = await cropBusinessCard(file);
         // Track the old image if it's a Drive URL to ensure it gets deleted
         const oldUrl = formData[slot];
         if (oldUrl && typeof oldUrl === 'string' && oldUrl.includes('drive.google.com')) {
           setRemovedImageUrls(prev => [...prev, oldUrl]);
         }
-        setFormData(prev => ({ ...prev, [slot]: compressedDataUrl }));
+        setFormData(prev => ({ ...prev, [slot]: processedDataUrl }));
         setIsDirty(true);
       } catch (err) {
         alert('Failed to process image.');

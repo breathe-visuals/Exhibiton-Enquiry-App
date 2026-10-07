@@ -58,19 +58,21 @@ function App() {
    * Optimistically add a new enquiry to local state immediately,
    * then send the single payload (including base64 images) to the backend.
    */
-  const addEnquiryOptimistic = useCallback(async (enquiryData) => {
-    const tempId = `ENQ-${Date.now()}`;
-    const tempEnquiry = {
-      ...enquiryData,
-      enquiry_id: tempId,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      status: enquiryData.status || 'New',
-    };
+  const addEnquiryOptimistic = useCallback((enquiryData) => {
+    return new Promise((resolve) => {
+      const tempId = `ENQ-${Date.now()}`;
+      const tempEnquiry = {
+        ...enquiryData,
+        enquiry_id: tempId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        status: enquiryData.status || 'New',
+      };
 
-    setEnquiries(prev => [tempEnquiry, ...prev]);
+      setEnquiries(prev => [tempEnquiry, ...prev]);
+      resolve({ success: true, enquiry_id: tempId }); // Instantly unblock UI
 
-    try {
+      // Background Sync
       const cleanPayload = {
         ...enquiryData,
         products: (enquiryData.products || []).map(({ _oldPhotoUrl, ...rest }) => rest),
@@ -79,40 +81,29 @@ function App() {
       const removedUrls = cleanPayload._removedImageUrls || [];
       delete cleanPayload._removedImageUrls;
 
-      console.log(`[Accountability: Add] Sending single payload (with base64 images) to backend...`);
-      const result = await api.createEnquiry(cleanPayload);
-      console.log(`[Accountability: Add] Entry created on backend successfully.`);
-
-      try {
-        console.log(`[Accountability: Add] Fetching final entry to sync frontend...`);
-        const created = await api.getEnquiryById(result.enquiry_id);
-        console.log(`[Accountability: Add] Sync complete.`);
-        setEnquiries(prev => {
-          const filtered = prev.filter(e => e.enquiry_id !== tempId);
-          return [created, ...filtered];
+      api.createEnquiry(cleanPayload)
+        .then(result => api.getEnquiryById(result.enquiry_id))
+        .then(created => {
+          setEnquiries(prev => {
+            const filtered = prev.filter(e => e.enquiry_id !== tempId);
+            return [created, ...filtered];
+          });
+        })
+        .catch(err => {
+          console.log('Background sync error (likely queued):', err);
         });
-      } catch (_) {
-        const fresh = await api.getEnquiries();
-        setEnquiries(Array.isArray(fresh) ? fresh : []);
-      }
-    } catch (err) {
-      setEnquiries(prev => prev.filter(e => e.enquiry_id !== tempId));
-      throw err;
-    }
+    });
   }, []);
 
   /**
    * Optimistically update an existing enquiry
    */
-  const editEnquiryOptimistic = useCallback(async (enquiryData) => {
-    // Snapshot state for rollback
-    let previousEnquiries;
-    setEnquiries(prev => {
-      previousEnquiries = prev;
-      return prev.map(e => (e.enquiry_id === enquiryData.enquiry_id ? { ...enquiryData, updated_at: new Date().toISOString() } : e));
-    });
+  const editEnquiryOptimistic = useCallback((enquiryData) => {
+    return new Promise((resolve) => {
+      setEnquiries(prev => prev.map(e => (e.enquiry_id === enquiryData.enquiry_id ? { ...enquiryData, updated_at: new Date().toISOString() } : e)));
+      resolve({ success: true, enquiry_id: enquiryData.enquiry_id }); // Instantly unblock UI
 
-    try {
+      // Background Sync
       const cleanPayload = {
         ...enquiryData,
         products: (enquiryData.products || []).map(({ _oldPhotoUrl, ...rest }) => rest),
@@ -120,34 +111,20 @@ function App() {
       const removedUrls = cleanPayload._removedImageUrls || [];
       delete cleanPayload._removedImageUrls;
 
-      console.log(`[Accountability: Edit] Sending single payload (with base64 images) to backend...`);
-      
-      await api.updateEnquiry(cleanPayload.enquiry_id, cleanPayload);
-      console.log(`[Accountability: Edit] Entry updated on backend successfully.`);
-
-      // Explicitly clean up old images on the frontend if the user replaced/removed them
-      if (removedUrls.length > 0) {
-        console.log(`[Accountability: Edit] Deleting ${removedUrls.length} old explicitly replaced/removed images...`);
-        api.deleteImages(removedUrls)
-          .then(res => console.log(`[Accountability: Edit] Old images deleted successfully. Trashed: ${res.trashed || removedUrls.length}`))
-          .catch(e => console.error('[Accountability: Edit] Old image cleanup failed:', e));
-      }
-
-      try {
-        console.log(`[Accountability: Edit] Fetching updated entry to sync frontend...`);
-        const updated = await api.getEnquiryById(cleanPayload.enquiry_id);
-        console.log(`[Accountability: Edit] Sync complete.`);
-        setEnquiries(prev => prev.map(e =>
-          e.enquiry_id === updated.enquiry_id ? updated : e
-        ));
-      } catch (_) {
-        const fresh = await api.getEnquiries();
-        setEnquiries(Array.isArray(fresh) ? fresh : []);
-      }
-    } catch (err) {
-      if (previousEnquiries) setEnquiries(previousEnquiries);
-      throw err;
-    }
+      api.updateEnquiry(cleanPayload.enquiry_id, cleanPayload)
+        .then(() => {
+          if (removedUrls.length > 0) {
+            api.deleteImages(removedUrls).catch(e => console.error(e));
+          }
+          return api.getEnquiryById(cleanPayload.enquiry_id);
+        })
+        .then(updated => {
+          setEnquiries(prev => prev.map(e => e.enquiry_id === updated.enquiry_id ? updated : e));
+        })
+        .catch(err => {
+          console.log('Background edit sync error (likely queued):', err);
+        });
+    });
   }, []);
 
   /**
