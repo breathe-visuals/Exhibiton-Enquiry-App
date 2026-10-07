@@ -3,6 +3,8 @@ import { Camera, Image as ImageIcon, Check, X, Plus, ZoomIn } from 'lucide-react
 import Header from '../components/Header';
 import AddProductModal from './AddProductModal';
 import ImageLightbox from '../components/ImageLightbox';
+import ImageCaptureSlot from '../components/ImageCaptureSlot';
+import ProductListManager from '../components/ProductListManager';
 import { compressImage } from '../utils/imageUtils';
 
 const PAYMENT_MODES = ['Cash', 'RTGS', 'NEFT', 'UPI', 'Cheque', 'Card', 'Other'];
@@ -50,7 +52,8 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
       setFormData(BLANK_FORM);
       setProducts([]);
     }
-  }, [editingEnquiryId, enquiries]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingEnquiryId]);
 
   // Auto-dismiss success banner after 3 s
   useEffect(() => {
@@ -139,7 +142,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
       
       if (editingEnquiryId) {
         // If editing, go back to details immediately so they can't click update again
-        navigateTo('enquiry-details', { enquiryId: editingEnquiryId });
+        navigateTo('enquiry-details', { enquiryId: editingEnquiryId }, true);
       } else {
         // ✅ Success: reset form so next enquiry can be entered right away
         setFormData(BLANK_FORM);
@@ -159,57 +162,6 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
     }
   };
 
-  const renderCardSlot = (slotKey, label) => {
-    const url = formData[slotKey];
-    return (
-      <div style={styles.cardSlot}>
-        <div style={styles.cardSlotLabel}>{label}</div>
-        {url ? (
-          <div style={styles.cardPreviewContainer}>
-            <div style={{ position: 'relative' }}>
-              <img
-                src={url}
-                alt={label}
-                style={styles.cardPreview}
-              />
-              {/* Tap-to-expand overlay */}
-              <button
-                style={styles.zoomBtn}
-                onClick={() => setLightboxSrc(url)}
-                aria-label="Expand image"
-              >
-                <ZoomIn size={18} color="white" />
-              </button>
-            </div>
-            <button
-              className="btn btn-secondary mt-sm"
-              onClick={() => {
-                const oldUrl = formData[slotKey];
-                if (oldUrl && typeof oldUrl === 'string' && oldUrl.includes('drive.google.com')) {
-                  setRemovedImageUrls(prev => [...prev, oldUrl]);
-                }
-                setFormData(p => ({ ...p, [slotKey]: null }));
-              }}
-            >
-              <X size={16} /> Remove
-            </button>
-          </div>
-        ) : (
-          <label style={styles.uploadBtn}>
-            <Camera size={24} />
-            <span>Capture {label}</span>
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              style={{ display: 'none' }}
-              onChange={(e) => handleCardCapture(e, slotKey)}
-            />
-          </label>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div style={{ paddingBottom: '80px' }}>
@@ -276,8 +228,32 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
       <div className="card">
         <h3 style={styles.sectionTitle}>Business Card</h3>
         <div style={styles.twoCardGrid}>
-          {renderCardSlot('business_card_url', 'Card Front')}
-          {renderCardSlot('business_card_url_2', 'Card Back')}
+          <ImageCaptureSlot
+            label="Card Front"
+            url={formData.business_card_url}
+            onCapture={(e) => handleCardCapture(e, 'business_card_url')}
+            onRemove={() => {
+              const oldUrl = formData.business_card_url;
+              if (oldUrl && typeof oldUrl === 'string' && oldUrl.includes('drive.google.com')) {
+                setRemovedImageUrls(prev => [...prev, oldUrl]);
+              }
+              setFormData(p => ({ ...p, business_card_url: null }));
+            }}
+            onZoom={setLightboxSrc}
+          />
+          <ImageCaptureSlot
+            label="Card Back"
+            url={formData.business_card_url_2}
+            onCapture={(e) => handleCardCapture(e, 'business_card_url_2')}
+            onRemove={() => {
+              const oldUrl = formData.business_card_url_2;
+              if (oldUrl && typeof oldUrl === 'string' && oldUrl.includes('drive.google.com')) {
+                setRemovedImageUrls(prev => [...prev, oldUrl]);
+              }
+              setFormData(p => ({ ...p, business_card_url_2: null }));
+            }}
+            onZoom={setLightboxSrc}
+          />
         </div>
       </div>
 
@@ -328,62 +304,13 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
         )}
       </div>
 
-      {/* Products */}
-      <div className="card" style={{ backgroundColor: 'transparent', boxShadow: 'none', padding: 0 }}>
-        <div className="flex justify-between items-center mb-md">
-          <h3 style={styles.sectionTitle}>Products Interested</h3>
-          <button
-            className="btn btn-secondary"
-            style={{ padding: '6px 12px', fontSize: '0.85rem' }}
-            onClick={() => { setEditingProduct(null); setIsModalOpen(true); }}
-          >
-            <Plus size={16} /> Add Product
-          </button>
-        </div>
-
-        {products.length === 0 ? (
-          <div style={styles.emptyProducts}>
-            <ImageIcon size={48} color="var(--border-color)" />
-            <p style={{ margin: '8px 0', color: 'var(--text-muted)' }}>No products added yet.</p>
-            <button
-              className="btn btn-primary"
-              style={styles.largeAddBtn}
-              onClick={() => { setEditingProduct(null); setIsModalOpen(true); }}
-            >
-              <Plus size={24} /> Add First Product
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {products.map(p => (
-              <div key={p.product_id} style={styles.productCard}>
-                <div style={{ position: 'relative' }}>
-                  <img src={p.photo_url} alt="Product" style={styles.productImg} loading="lazy"
-                    onError={(e) => { e.target.style.opacity = '0.3'; }}
-                  />
-                  <button
-                    style={styles.productZoomBtn}
-                    onClick={() => setLightboxSrc(p.photo_url)}
-                    aria-label="View product photo"
-                  >
-                    <ZoomIn size={14} color="white" />
-                  </button>
-                </div>
-                <div style={styles.productInfo}>
-                  <div style={styles.productTitle}>{p.description}</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Qty: {p.quantity} {p.unit}
-                  </div>
-                  <div style={styles.productActions}>
-                    <button style={styles.actionBtn} onClick={() => { setEditingProduct(p); setIsModalOpen(true); }}>Edit</button>
-                    <button style={{ ...styles.actionBtn, color: 'var(--danger-color)' }} onClick={() => deleteProduct(p.product_id)}>Remove</button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <ProductListManager
+        products={products}
+        onAdd={() => { setEditingProduct(null); setIsModalOpen(true); }}
+        onEdit={(p) => { setEditingProduct(p); setIsModalOpen(true); }}
+        onRemove={deleteProduct}
+        onZoom={setLightboxSrc}
+      />
 
       {/* General Notes */}
       <div className="card mt-md">
@@ -459,136 +386,6 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
     gap: '12px',
-  },
-  cardSlot: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  cardSlotLabel: {
-    fontSize: '0.8rem',
-    fontWeight: '600',
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-  },
-  uploadBtn: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    padding: '20px 12px',
-    backgroundColor: '#f8fafc',
-    border: '2px dashed var(--primary-color)',
-    borderRadius: '12px',
-    color: 'var(--primary-color)',
-    cursor: 'pointer',
-    fontWeight: '600',
-    fontSize: '0.85rem',
-    textAlign: 'center',
-    minHeight: '110px',
-  },
-  cardPreviewContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-  },
-  cardPreview: {
-    width: '100%',
-    maxHeight: '140px',
-    objectFit: 'contain',
-    borderRadius: '8px',
-    border: '1px solid var(--border-color)',
-    cursor: 'zoom-in',
-  },
-  zoomBtn: {
-    position: 'absolute',
-    bottom: '6px',
-    right: '6px',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    border: 'none',
-    borderRadius: '6px',
-    width: '30px',
-    height: '30px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-  },
-  largeAddBtn: {
-    marginTop: '12px',
-    padding: '12px 24px',
-    borderRadius: '24px',
-    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
-  },
-  emptyProducts: {
-    padding: '32px 16px',
-    backgroundColor: 'white',
-    borderRadius: '12px',
-    textAlign: 'center',
-    color: 'var(--text-muted)',
-    border: '1px dashed var(--border-color)',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  productCard: {
-    display: 'flex',
-    backgroundColor: 'white',
-    borderRadius: '12px',
-    overflow: 'hidden',
-    boxShadow: 'var(--box-shadow)',
-    height: '100px',
-  },
-  productImg: {
-    width: '100px',
-    height: '100px',
-    objectFit: 'cover',
-    cursor: 'zoom-in',
-  },
-  productZoomBtn: {
-    position: 'absolute',
-    bottom: '4px',
-    right: '4px',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    border: 'none',
-    borderRadius: '4px',
-    width: '24px',
-    height: '24px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-  },
-  productInfo: {
-    padding: '12px',
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  productTitle: {
-    fontWeight: '600',
-    fontSize: '0.95rem',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    maxWidth: '180px',
-  },
-  productActions: {
-    marginTop: 'auto',
-    display: 'flex',
-    gap: '12px',
-  },
-  actionBtn: {
-    background: 'none',
-    border: 'none',
-    color: 'var(--primary-color)',
-    fontSize: '0.8rem',
-    padding: 0,
-    cursor: 'pointer',
-    fontWeight: '500',
   },
   bottomBar: {
     position: 'fixed',

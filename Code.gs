@@ -125,11 +125,17 @@ function sheetToObjects(sheet) {
   var data = sheet.getDataRange().getValues();
   if (data.length <= 1) return [];
   var headers = data[0];
-  return data.slice(1).map(function(row) {
+  var result = [];
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    // Skip entirely blank rows (where the first 3 columns are empty)
+    if (String(row[0]) === '' && String(row[1]) === '' && String(row[2]) === '') continue;
+    
     var obj = {};
-    headers.forEach(function(h, i) { obj[h] = row[i]; });
-    return obj;
-  });
+    headers.forEach(function(h, j) { obj[h] = row[j]; });
+    result.push(obj);
+  }
+  return result;
 }
 
 // --- Image upload -------------------------------------------------------------
@@ -415,6 +421,7 @@ function updateEnquiry(enquiryId, enquiry) {
 
     // Update products: delete old ones, insert new ones
     _deleteRowsById(ss, 'Products', 'enquiry_id', [enquiryId]);
+    SpreadsheetApp.flush(); // Force sheet bounds to update so getLastRow() is accurate
 
     if (products.length > 0) {
       var prodRows = products.map(function(p) {

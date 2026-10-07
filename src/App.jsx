@@ -35,24 +35,8 @@ function App() {
   }, []);
 
   /**
-   * Helper: if the value is a base64 data URL, upload it to Drive and
-   * return the resulting Drive thumbnail URL. Otherwise pass it through.
-   */
-  const maybeUploadImage = useCallback(async (dataUrl, type) => {
-    if (!dataUrl || !dataUrl.startsWith('data:image')) return dataUrl || '';
-    // uploadImage calls the /upload endpoint which saves to the correct Drive folder
-    const res = await api.uploadImage(dataUrl, type);
-    return res;
-  }, []);
-
-  /**
    * Optimistically add a new enquiry to local state immediately,
-   * then upload all images separately and fire the API call.
-   *
-   * WHY: Embedding large base64 strings inside the createEnquiry payload
-   * caused Apps Script POST-body size / execution-timeout failures.
-   * Uploading each image via the dedicated /upload endpoint first keeps
-   * the final createEnquiry payload small (Drive URLs only).
+   * then send the single payload (including base64 images) to the backend.
    */
   const addEnquiryOptimistic = useCallback(async (enquiryData) => {
     const tempId = `ENQ-${Date.now()}`;
@@ -95,7 +79,7 @@ function App() {
       setEnquiries(prev => prev.filter(e => e.enquiry_id !== tempId));
       throw err;
     }
-  }, [maybeUploadImage]);
+  }, []);
 
   /**
    * Optimistically update an existing enquiry
@@ -144,7 +128,7 @@ function App() {
       if (previousEnquiries) setEnquiries(previousEnquiries);
       throw err;
     }
-  }, [maybeUploadImage]);
+  }, []);
 
   /**
    * Optimistically update enquiry status in local state,
@@ -196,8 +180,8 @@ function App() {
     }
   }, []);
 
-  const navigateTo = useCallback((route, params = {}) => {
-    if (isDirty) {
+  const navigateTo = useCallback((route, params = {}, force = false) => {
+    if (!force && isDirty) {
       const confirmLeave = window.confirm('You have unsaved changes. Are you sure you want to leave?');
       if (!confirmLeave) return;
     }
