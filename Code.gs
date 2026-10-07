@@ -40,6 +40,13 @@ function errResponse(msg) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// --- Cache Invalidater --------------------------------------------------------
+function invalidateCache() {
+  try {
+    CacheService.getScriptCache().remove('enquiries_data');
+  } catch(e) {}
+}
+
 // --- Router -------------------------------------------------------------------
 function doPost(e) {
   try {
@@ -303,6 +310,7 @@ function createEnquiry(enquiry) {
     }
 
     SpreadsheetApp.flush(); // commit before releasing lock
+    invalidateCache(); // Invalidate cache on create
     return { success: true, enquiry_id: enquiryId };
 
   } catch (writeErr) {
@@ -455,6 +463,7 @@ function updateEnquiry(enquiryId, enquiry) {
       } catch (e) { Logger.log("[Accountability: Edit] Error trashing obsolete images: " + e); }
     }
 
+    invalidateCache(); // Invalidate cache on update
     return { success: true, enquiry_id: enquiryId };
 
   } catch (writeErr) {
@@ -468,6 +477,15 @@ function updateEnquiry(enquiryId, enquiry) {
 
 // --- Read all Enquiries --------------------------------------------------------
 function getEnquiries() {
+  var cache = CacheService.getScriptCache();
+  var cachedData = cache.get('enquiries_data');
+  
+  if (cachedData) {
+    try {
+      return JSON.parse(cachedData);
+    } catch(e) {}
+  }
+
   var ss             = SpreadsheetApp.openById(SPREADSHEET_ID);
   var enquiriesSheet = getOrCreateSheet(ss, 'Enquiries');
   var productsSheet  = getOrCreateSheet(ss, 'Products');
@@ -487,9 +505,18 @@ function getEnquiries() {
     e.products = productMap[String(e.enquiry_id)] || [];
   });
 
-  return enquiriesData.sort(function(a, b) {
+  var result = enquiriesData.sort(function(a, b) {
     return new Date(b.created_at) - new Date(a.created_at);
   });
+  
+  try {
+    var jsonString = JSON.stringify(result);
+    if (jsonString.length < 100000) {
+      cache.put('enquiries_data', jsonString, 900);
+    }
+  } catch(e) {}
+  
+  return result;
 }
 
 // --- Read single Enquiry ------------------------------------------------------
@@ -564,6 +591,7 @@ function deleteEnquiry(enquiryId) {
     _deleteRowsById(ss, 'Enquiries', 'enquiry_id', [enquiryId]);
     _deleteRowsById(ss, 'Products',  'enquiry_id', [enquiryId]);
     SpreadsheetApp.flush();
+    invalidateCache();
 
     return { success: true };
   } finally {
@@ -601,6 +629,7 @@ function batchDeleteEnquiries(ids) {
     _deleteRowsById(ss, 'Enquiries', 'enquiry_id', ids);
     _deleteRowsById(ss, 'Products',  'enquiry_id', ids);
     SpreadsheetApp.flush();
+    invalidateCache();
 
     return { success: true, deleted: ids.length };
   } finally {
@@ -700,6 +729,7 @@ function updateEnquiryStatus(enquiryId, newStatus) {
       sheet.getRange(rowIndex, updatedAtCol + 1).setValue(new Date().toISOString());
     }
     SpreadsheetApp.flush();
+    invalidateCache();
 
     return { success: true, enquiry_id: enquiryId, status: newStatus };
   } finally {

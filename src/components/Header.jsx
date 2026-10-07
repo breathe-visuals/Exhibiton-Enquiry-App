@@ -1,7 +1,18 @@
-import React from 'react';
-import { ChevronLeft } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, WifiOff } from 'lucide-react';
+import { getOfflineQueue } from '../services/api';
 
 const Header = React.memo(({ title, showBack, onBack, rightElement }) => {
+  const [queueCount, setQueueCount] = useState(0);
+
+  useEffect(() => {
+    const updateQueue = () => {
+      setQueueCount(getOfflineQueue().length);
+    };
+    updateQueue();
+    window.addEventListener('offline-queue-updated', updateQueue);
+    return () => window.removeEventListener('offline-queue-updated', updateQueue);
+  }, []);
   return (
     <div style={styles.header}>
       <div style={styles.left}>
@@ -12,7 +23,14 @@ const Header = React.memo(({ title, showBack, onBack, rightElement }) => {
         )}
       </div>
       <div style={styles.center}>
-        <h2 style={styles.title}>{title}</h2>
+        <h2 style={styles.title}>
+          {title}
+          {queueCount > 0 && (
+            <span style={styles.offlineBadge}>
+              <WifiOff size={12} /> {queueCount}
+            </span>
+          )}
+        </h2>
       </div>
       <div style={styles.right}>
         {rightElement}
@@ -61,6 +79,21 @@ const styles = {
   title: {
     fontSize: '1.1rem',
     margin: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+  },
+  offlineBadge: {
+    fontSize: '0.75rem',
+    backgroundColor: '#f59e0b',
+    color: '#fff',
+    padding: '2px 6px',
+    borderRadius: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    fontWeight: 'normal',
   }
 };
 

@@ -78,6 +78,7 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
   const [selectMode, setSelectMode]     = useState(false);
   const [selected, setSelected]         = useState(new Set());
   const [isDeleting, setIsDeleting]     = useState(false);
+  const [visibleCount, setVisibleCount] = useState(25);
 
   // Status sheet state
   const [sheetEnquiry, setSheetEnquiry] = useState(null); // the enquiry whose sheet is open
@@ -91,7 +92,10 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
 
   // Debounce search input — avoids filtering on every keystroke
   useEffect(() => {
-    const timer = setTimeout(() => setSearchTerm(rawSearch), 200);
+    const timer = setTimeout(() => {
+      setSearchTerm(rawSearch);
+      setVisibleCount(25); // reset pagination on search
+    }, 200);
     return () => clearTimeout(timer);
   }, [rawSearch]);
 
@@ -246,7 +250,10 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
           className="form-select"
           style={styles.statusSelect}
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            setVisibleCount(25);
+          }}
         >
           <option value="All">All</option>
           <option value="New">🔵 New</option>
@@ -319,7 +326,7 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
 
       {/* Enquiry cards */}
       <div style={styles.list}>
-        {filteredEnquiries.map(enquiry => {
+        {filteredEnquiries.slice(0, visibleCount).map(enquiry => {
           const isSelected  = selected.has(enquiry.enquiry_id);
           const statusStyle = STATUS_COLORS[enquiry.status] || STATUS_COLORS['New'];
           return (
@@ -427,6 +434,15 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
             <Search size={40} color="var(--border-color)" style={{ marginBottom: '12px' }} />
             <div>No enquiries found.</div>
           </div>
+        )}
+
+        {visibleCount < filteredEnquiries.length && (
+          <button 
+            style={styles.loadMoreBtn} 
+            onClick={() => setVisibleCount(v => v + 25)}
+          >
+            Load More
+          </button>
         )}
       </div>
 
@@ -615,6 +631,17 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
+  },
+  loadMoreBtn: {
+    width: '100%',
+    padding: '12px',
+    marginTop: '16px',
+    backgroundColor: '#fff',
+    border: '1px solid var(--border-color)',
+    borderRadius: '12px',
+    color: 'var(--primary-color)',
+    fontWeight: '600',
+    cursor: 'pointer',
   },
   enquiryCard: {
     cursor: 'pointer',

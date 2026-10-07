@@ -5,6 +5,7 @@ import NewEnquiry from './screens/NewEnquiry';
 import EnquiryDetails from './screens/EnquiryDetails';
 import Settings from './screens/Settings';
 import BottomNav from './components/BottomNav';
+import ErrorBoundary from './components/ErrorBoundary';
 import * as api from './services/api';
 
 function App() {
@@ -15,17 +16,36 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Load data once on mount
+  // SWR: Hydrate immediately from localStorage, then fetch fresh
   useEffect(() => {
     let cancelled = false;
+    const CACHE_KEY = 'enquiries_swr_cache';
+    
+    // 1. Instantly load from local storage
+    try {
+      const cachedData = localStorage.getItem(CACHE_KEY);
+      if (cachedData) {
+        setEnquiries(JSON.parse(cachedData));
+        setIsLoading(false); // UI instantly unblocks
+      }
+    } catch(e) {}
+
+    // 2. Fetch fresh from network (background)
     const fetchEnquiries = async () => {
-      setIsLoading(true);
+      // Only show spinner if we don't have cached data
+      if (enquiries.length === 0) setIsLoading(true);
       setError(null);
       try {
         const data = await api.getEnquiries();
-        if (!cancelled) setEnquiries(Array.isArray(data) ? data : []);
+        if (!cancelled) {
+          const freshData = Array.isArray(data) ? data : [];
+          setEnquiries(freshData);
+          localStorage.setItem(CACHE_KEY, JSON.stringify(freshData));
+        }
       } catch (err) {
-        if (!cancelled) setError(err.message || 'Failed to load enquiries. Please try again.');
+        if (!cancelled && enquiries.length === 0) {
+          setError(err.message || 'Failed to load enquiries. Please try again.');
+        }
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -264,7 +284,9 @@ function App() {
   return (
     <div className="app-container">
       <main className="main-content">
-        {renderScreen()}
+        <ErrorBoundary>
+          {renderScreen()}
+        </ErrorBoundary>
       </main>
       
       {!hideBottomNav && (
