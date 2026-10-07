@@ -76,11 +76,11 @@ const exportToPDF = (enquiry) => {
     
     .notes-box { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 3px solid #94a3b8; padding: 14px 18px; border-radius: 4px; color: #334155; }
     
-    /* Business Cards (Full width) */
-    .cards-row { display: flex; flex-direction: column; gap: 24px; }
+    /* Business Cards (2-column Grid) */
+    .cards-row { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
     .card-cell { width: 100%; display: flex; flex-direction: column; gap: 8px; }
     .card-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px dashed #cbd5e1; padding-bottom: 4px; }
-    .card-img { width: 100%; max-height: 450px; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; padding: 8px; }
+    .card-img { width: 100%; max-height: 300px; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; padding: 8px; }
     
     /* Products Grid */
     .page-break { page-break-before: always; break-before: page; padding-top: 10px; }
