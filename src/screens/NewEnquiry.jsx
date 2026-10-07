@@ -138,10 +138,8 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
       setSavedOk(true);
       
       if (editingEnquiryId) {
-        // If editing, briefly show success then go back to details
-        setTimeout(() => {
-          navigateTo('enquiry-details', { enquiryId: editingEnquiryId });
-        }, 800);
+        // If editing, go back to details immediately so they can't click update again
+        navigateTo('enquiry-details', { enquiryId: editingEnquiryId });
       } else {
         // ✅ Success: reset form so next enquiry can be entered right away
         setFormData(BLANK_FORM);

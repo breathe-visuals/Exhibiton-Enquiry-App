@@ -66,52 +66,19 @@ function App() {
 
     setEnquiries(prev => [tempEnquiry, ...prev]);
 
-    let uploadedUrlsThisSession = [];
-
     try {
-      // ── 1. Pre-upload business card images ──────────────────────────────
-      const [bcUrl1, bcUrl2] = await Promise.all([
-        maybeUploadImage(enquiryData.business_card_url,   'business_card'),
-        maybeUploadImage(enquiryData.business_card_url_2, 'business_card'),
-      ]);
-      
-      if (bcUrl1 && bcUrl1.includes('drive.google.com') && enquiryData.business_card_url !== bcUrl1) uploadedUrlsThisSession.push(bcUrl1);
-      if (bcUrl2 && bcUrl2.includes('drive.google.com') && enquiryData.business_card_url_2 !== bcUrl2) uploadedUrlsThisSession.push(bcUrl2);
-
-      // ── 2. Pre-upload product photos in parallel batches of 3 ────────────
-      const UPLOAD_CONCURRENCY = 3;
-      const uploadedProducts = [];
-      const productList = enquiryData.products || [];
-
-      for (let i = 0; i < productList.length; i += UPLOAD_CONCURRENCY) {
-        const batch = productList.slice(i, i + UPLOAD_CONCURRENCY);
-        const results = await Promise.all(
-          batch.map(async (p) => {
-            const photoUrl = await maybeUploadImage(p.photo_url, 'product');
-            if (photoUrl && photoUrl.includes('drive.google.com') && p.photo_url !== photoUrl) {
-              uploadedUrlsThisSession.push(photoUrl);
-            }
-            return { ...p, photo_url: photoUrl };
-          })
-        );
-        uploadedProducts.push(...results);
-      }
-
-      // ── 3. Build clean payload (Drive URLs, no base64) ──────────────────
       const cleanPayload = {
         ...enquiryData,
-        business_card_url:   bcUrl1,
-        business_card_url_2: bcUrl2,
-        products: uploadedProducts,
+        products: (enquiryData.products || []).map(({ _oldPhotoUrl, ...rest }) => rest),
       };
+      
+      const removedUrls = cleanPayload._removedImageUrls || [];
+      delete cleanPayload._removedImageUrls;
 
-      console.log(`[Accountability: Add] Payload ready. New images uploaded: ${uploadedUrlsThisSession.length}`);
-
-      // ── 4. Save enquiry (small JSON, no embedded images) ─────────────────
+      console.log(`[Accountability: Add] Sending single payload (with base64 images) to backend...`);
       const result = await api.createEnquiry(cleanPayload);
       console.log(`[Accountability: Add] Entry created on backend successfully.`);
 
-      // Fetch only the new enquiry instead of the entire list
       try {
         console.log(`[Accountability: Add] Fetching final entry to sync frontend...`);
         const created = await api.getEnquiryById(result.enquiry_id);
@@ -121,17 +88,12 @@ function App() {
           return [created, ...filtered];
         });
       } catch (_) {
-        // Fallback: full re-fetch if single-fetch fails
         const fresh = await api.getEnquiries();
         setEnquiries(Array.isArray(fresh) ? fresh : []);
       }
     } catch (err) {
-      // Rollback optimistic insert on failure
       setEnquiries(prev => prev.filter(e => e.enquiry_id !== tempId));
-      if (uploadedUrlsThisSession.length > 0) {
-        api.deleteImages(uploadedUrlsThisSession).catch(e => console.error("Failed to delete orphaned images:", e));
-      }
-      throw err; // propagate so NewEnquiry can show the error alert
+      throw err;
     }
   }, [maybeUploadImage]);
 
@@ -146,51 +108,20 @@ function App() {
       return prev.map(e => (e.enquiry_id === enquiryData.enquiry_id ? { ...enquiryData, updated_at: new Date().toISOString() } : e));
     });
 
-    let uploadedUrlsThisSession = [];
-
     try {
-      const [bcUrl1, bcUrl2] = await Promise.all([
-        maybeUploadImage(enquiryData.business_card_url,   'business_card'),
-        maybeUploadImage(enquiryData.business_card_url_2, 'business_card'),
-      ]);
-      
-      if (bcUrl1 && bcUrl1.includes('drive.google.com') && enquiryData.business_card_url !== bcUrl1) uploadedUrlsThisSession.push(bcUrl1);
-      if (bcUrl2 && bcUrl2.includes('drive.google.com') && enquiryData.business_card_url_2 !== bcUrl2) uploadedUrlsThisSession.push(bcUrl2);
-
-      const uploadedProducts = [];
-      const productList = enquiryData.products || [];
-      const UPLOAD_CONCURRENCY = 3;
-
-      for (let i = 0; i < productList.length; i += UPLOAD_CONCURRENCY) {
-        const batch = productList.slice(i, i + UPLOAD_CONCURRENCY);
-        const results = await Promise.all(
-          batch.map(async (p) => {
-            const photoUrl = await maybeUploadImage(p.photo_url, 'product');
-            if (photoUrl && photoUrl.includes('drive.google.com') && p.photo_url !== photoUrl) {
-              uploadedUrlsThisSession.push(photoUrl);
-            }
-            return { ...p, photo_url: photoUrl };
-          })
-        );
-        uploadedProducts.push(...results);
-      }
-
       const cleanPayload = {
         ...enquiryData,
-        business_card_url:   bcUrl1,
-        business_card_url_2: bcUrl2,
-        products: uploadedProducts.map(({ _oldPhotoUrl, ...rest }) => rest),
+        products: (enquiryData.products || []).map(({ _oldPhotoUrl, ...rest }) => rest),
       };
-      // Strip internal tracking fields before sending to backend
       const removedUrls = cleanPayload._removedImageUrls || [];
       delete cleanPayload._removedImageUrls;
 
-      console.log(`[Accountability: Edit] Payload ready. New images uploaded this session: ${uploadedUrlsThisSession.length}`);
+      console.log(`[Accountability: Edit] Sending single payload (with base64 images) to backend...`);
       
-      const updateResult = await api.updateEnquiry(cleanPayload.enquiry_id, cleanPayload);
+      await api.updateEnquiry(cleanPayload.enquiry_id, cleanPayload);
       console.log(`[Accountability: Edit] Entry updated on backend successfully.`);
 
-      // Safety net: explicitly delete images the user removed on the frontend
+      // Explicitly clean up old images on the frontend if the user replaced/removed them
       if (removedUrls.length > 0) {
         console.log(`[Accountability: Edit] Deleting ${removedUrls.length} old explicitly replaced/removed images...`);
         api.deleteImages(removedUrls)
@@ -198,7 +129,6 @@ function App() {
           .catch(e => console.error('[Accountability: Edit] Old image cleanup failed:', e));
       }
 
-      // Fetch only the updated enquiry instead of the entire list
       try {
         console.log(`[Accountability: Edit] Fetching updated entry to sync frontend...`);
         const updated = await api.getEnquiryById(cleanPayload.enquiry_id);
@@ -207,15 +137,11 @@ function App() {
           e.enquiry_id === updated.enquiry_id ? updated : e
         ));
       } catch (_) {
-        // Fallback: full re-fetch if single-fetch fails
         const fresh = await api.getEnquiries();
         setEnquiries(Array.isArray(fresh) ? fresh : []);
       }
     } catch (err) {
       if (previousEnquiries) setEnquiries(previousEnquiries);
-      if (uploadedUrlsThisSession.length > 0) {
-        api.deleteImages(uploadedUrlsThisSession).catch(e => console.error("Failed to delete orphaned images:", e));
-      }
       throw err;
     }
   }, [maybeUploadImage]);
