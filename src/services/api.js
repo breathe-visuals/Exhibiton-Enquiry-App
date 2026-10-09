@@ -84,7 +84,20 @@ const request = async (endpoint, method = 'GET', data = null, _retryCount = 0) =
       throw new Error(`API error: ${response.status} ${response.statusText}`);
     }
 
-    const result = await response.json();
+    let result;
+    try {
+      const textResponse = await response.text();
+      try {
+        result = JSON.parse(textResponse);
+      } catch (e) {
+        if (textResponse.includes('<html')) {
+          throw new Error('Backend returned an HTML error page. Did you forget to deploy the new version of your Google Apps Script? (Manage Deployments -> New Version)');
+        }
+        throw new Error('Failed to parse backend response as JSON: ' + textResponse.substring(0, 50));
+      }
+    } catch (parseError) {
+      throw parseError;
+    }
 
     // Google Apps Script returned a caught error
     if (result && result.success === false) {
