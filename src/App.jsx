@@ -7,6 +7,7 @@ import Settings from './screens/Settings';
 import BottomNav from './components/BottomNav';
 import ErrorBoundary from './components/ErrorBoundary';
 import * as api from './services/api';
+import * as localDb from './services/localDb';
 
 function App() {
   const [currentRoute, setCurrentRoute] = useState('dashboard');
@@ -16,19 +17,17 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // SWR: Hydrate immediately from localStorage, then fetch fresh
+  // SWR: Hydrate immediately from localDb, then fetch fresh
   useEffect(() => {
     let cancelled = false;
-    const CACHE_KEY = 'enquiries_swr_cache';
     
-    // 1. Instantly load from local storage
-    try {
-      const cachedData = localStorage.getItem(CACHE_KEY);
-      if (cachedData) {
-        setEnquiries(JSON.parse(cachedData));
+    // 1. Instantly load from IndexedDB
+    localDb.getLocalEnquiries().then(cachedData => {
+      if (cachedData && cachedData.length > 0 && !cancelled) {
+        setEnquiries(cachedData);
         setIsLoading(false); // UI instantly unblocks
       }
-    } catch(e) {}
+    }).catch(e => console.error(e));
 
     // 2. Fetch fresh from network (background)
     const fetchEnquiries = async () => {
@@ -40,7 +39,7 @@ function App() {
         if (!cancelled) {
           const freshData = Array.isArray(data) ? data : [];
           setEnquiries(freshData);
-          localStorage.setItem(CACHE_KEY, JSON.stringify(freshData));
+          localDb.saveLocalEnquiries(freshData).catch(e => console.error(e));
         }
       } catch (err) {
         if (!cancelled && enquiries.length === 0) {
@@ -53,6 +52,13 @@ function App() {
     fetchEnquiries();
     return () => { cancelled = true; };
   }, []);
+
+  // 3. Persist local state to IndexedDB whenever it changes
+  useEffect(() => {
+    if (!isLoading && enquiries.length > 0) {
+      localDb.saveLocalEnquiries(enquiries).catch(e => console.error(e));
+    }
+  }, [enquiries, isLoading]);
 
   /**
    * Optimistically add a new enquiry to local state immediately,

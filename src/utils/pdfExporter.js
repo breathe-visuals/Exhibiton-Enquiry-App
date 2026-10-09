@@ -196,19 +196,54 @@ const exportToPDF = (enquiry) => {
     }
     const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
     if (!isMobile) {
-      window.addEventListener('load', () => setTimeout(() => window.print(), 800));
+      // For desktop, we can just trigger it
+      setTimeout(() => window.print(), 800);
+    } else {
+      // For mobile, wait a bit for images to load then trigger print
+      setTimeout(() => window.print(), 800);
     }
   </script>
-</body>
-</html>`;
+</div>`;
 
-  const win = window.open('', '_blank');
-  if (win) {
-    win.document.write(html);
-    win.document.close();
-  } else {
-    alert('Please allow pop-ups to export PDF.');
-  }
+  // Create a container for the print view
+  const printContainer = document.createElement('div');
+  printContainer.id = 'print-mount';
+  printContainer.style.position = 'absolute';
+  printContainer.style.top = '0';
+  printContainer.style.left = '0';
+  printContainer.style.width = '100%';
+  printContainer.style.zIndex = '999999';
+  printContainer.style.backgroundColor = '#fff';
+  printContainer.innerHTML = html;
+
+  // Add print-specific styles to hide the rest of the app
+  const style = document.createElement('style');
+  style.id = 'print-style';
+  style.innerHTML = `
+    @media print {
+      body > *:not(#print-mount) { display: none !important; }
+      #print-mount { position: relative; z-index: auto; }
+    }
+  `;
+  
+  document.head.appendChild(style);
+  document.body.appendChild(printContainer);
+
+  // Function to cleanup after printing
+  const cleanup = () => {
+    if (document.getElementById('print-mount')) {
+      document.body.removeChild(printContainer);
+    }
+    if (document.getElementById('print-style')) {
+      document.head.removeChild(style);
+    }
+    window.removeEventListener('afterprint', cleanup);
+  };
+
+  window.addEventListener('afterprint', cleanup);
+
+  // Fallback cleanup in case afterprint doesn't fire (some mobile browsers)
+  setTimeout(cleanup, 60000); // Clean up after 1 min regardless
 };
 
 export default exportToPDF;

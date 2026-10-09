@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, WifiOff } from 'lucide-react';
-import { getOfflineQueue } from '../services/api';
+import { getOfflineQueueLength } from '../services/api';
 
 const Header = React.memo(({ title, showBack, onBack, rightElement }) => {
   const [queueCount, setQueueCount] = useState(0);
 
   useEffect(() => {
-    const updateQueue = () => {
-      setQueueCount(getOfflineQueue().length);
+    const updateQueue = async () => {
+      const count = await getOfflineQueueLength();
+      setQueueCount(count);
     };
     updateQueue();
     window.addEventListener('offline-queue-updated', updateQueue);

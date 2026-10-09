@@ -1,4 +1,4 @@
-const CACHE_NAME = 'enquiry-app-cache-v1';
+const CACHE_NAME = 'enquiry-app-cache-v2';
 const URLS_TO_CACHE = [
   '/',
   '/index.html',
@@ -28,45 +28,42 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // Only handle GET requests for our origin
-  if (event.request.method !== 'GET' || !event.request.url.startsWith(self.location.origin)) {
-    return;
-  }
+  const requestUrl = new URL(event.request.url);
+
+  // Skip POST, PUT, DELETE, etc.
+  if (event.request.method !== 'GET') return;
+
+  // Stale-While-Revalidate Strategy for everything from our origin or font origins
+  const isOurOrigin = requestUrl.origin === self.location.origin;
+  const isFontOrigin = requestUrl.hostname === 'fonts.googleapis.com' || requestUrl.hostname === 'fonts.gstatic.com';
   
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        // Cache hit - return response
-        if (response) {
-          return response;
-        }
-        
-        // Clone the request
-        const fetchRequest = event.request.clone();
-
-        return fetch(fetchRequest).then(
-          response => {
-            // Check if we received a valid response
-            if(!response || response.status !== 200 || response.type !== 'basic') {
-              return response;
-            }
-
-            // Clone the response
-            const responseToCache = response.clone();
-
-            caches.open(CACHE_NAME)
-              .then(cache => {
+  if (isOurOrigin || isFontOrigin) {
+    event.respondWith(
+      caches.match(event.request).then(cachedResponse => {
+        const fetchPromise = fetch(event.request).then(networkResponse => {
+          if (networkResponse && networkResponse.status === 200) {
+            // Only cache valid responses
+            if (networkResponse.type === 'basic' || networkResponse.type === 'cors' || networkResponse.type === 'opaque') {
+              const responseToCache = networkResponse.clone();
+              caches.open(CACHE_NAME).then(cache => {
                 cache.put(event.request, responseToCache);
               });
-
-            return response;
+            }
           }
-        ).catch(() => {
-          // If offline and not in cache, fallback to index.html (useful for SPAs)
-          if (event.request.mode === 'navigate') {
-            return caches.match('/index.html');
-          }
+          return networkResponse;
+        }).catch(err => {
+          // If offline and request fails
+          return cachedResponse;
         });
+
+        // Return cached response immediately if available, while fetching in background
+        return cachedResponse || fetchPromise;
+      }).catch(() => {
+        // Fallback for navigation requests
+        if (event.request.mode === 'navigate') {
+          return caches.match('/index.html');
+        }
       })
-  );
+    );
+  }
 });

@@ -1,4 +1,5 @@
 import * as mockApi from '../utils/mockData';
+import * as localDb from './localDb';
 
 const API_URL = import.meta.env.VITE_API_URL;
 const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA === 'true';
@@ -6,37 +7,25 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA === 'true';
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1500;
 
-const OFFLINE_QUEUE_KEY = 'enquiries_offline_queue';
-
-export const getOfflineQueue = () => {
+export const getOfflineQueueLength = async () => {
   try {
-    return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY)) || [];
-  } catch(e) { return []; }
+    const tasks = await localDb.getSyncTasks();
+    return tasks.length;
+  } catch(e) { return 0; }
 };
 
-const saveOfflineQueue = (queue) => {
-  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-};
-
-const enqueueRequest = (endpoint, method, data) => {
-  const queue = getOfflineQueue();
-  queue.push({ endpoint, method, data, timestamp: Date.now() });
-  saveOfflineQueue(queue);
-  window.dispatchEvent(new CustomEvent('offline-queue-updated', { detail: queue }));
+const enqueueRequest = async (endpoint, method, data) => {
+  await localDb.addSyncTask(endpoint, method, data);
 };
 
 export const processOfflineQueue = async () => {
-  const queue = getOfflineQueue();
-  if (queue.length === 0) return;
+  const tasks = await localDb.getSyncTasks();
+  if (tasks.length === 0) return 0;
   
   let successCount = 0;
-  // Create a copy of the queue and clear the storage, 
-  // so concurrent requests don't mess it up
-  saveOfflineQueue([]);
-  let failed = [];
 
-  for (let i = 0; i < queue.length; i++) {
-    const req = queue[i];
+  for (let i = 0; i < tasks.length; i++) {
+    const req = tasks[i];
     try {
       const url = new URL(API_URL);
       url.searchParams.append('endpoint', req.endpoint);
@@ -51,20 +40,17 @@ export const processOfflineQueue = async () => {
       const result = await response.json();
       if (result && result.success === false) throw new Error(result.error);
       
+      // Request successful, remove from queue
+      await localDb.removeSyncTask(req.id);
       successCount++;
     } catch (err) {
-      // Put it back in the failed list to retry later
-      failed.push(req);
+      // Keep it in DB to retry later, maybe increment retry count
+      req.retryCount = (req.retryCount || 0) + 1;
+      await localDb.updateSyncTask(req);
     }
   }
 
-  // Restore failed items
-  if (failed.length > 0) {
-    const currentQueue = getOfflineQueue();
-    saveOfflineQueue([...failed, ...currentQueue]);
-  }
-  
-  window.dispatchEvent(new CustomEvent('offline-queue-updated', { detail: getOfflineQueue() }));
+  window.dispatchEvent(new CustomEvent('offline-queue-updated'));
   return successCount;
 };
 
