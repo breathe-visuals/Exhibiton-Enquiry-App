@@ -25,27 +25,39 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
   useEffect(() => {
     let cancelled = false;
 
-    // First try to find from already-loaded list (instant)
-    if (enquiries && enquiries.length > 0) {
-      const found = enquiries.find(e => String(e.enquiry_id) === String(enquiryId));
-      if (found) {
-        setEnquiry(found);
-        return; // no network fetch needed
-      }
+    // Step 1: Find immediately from the in-memory list (instant render)
+    const foundInList = enquiries && enquiries.length > 0
+      ? enquiries.find(e => String(e.enquiry_id) === String(enquiryId))
+      : null;
+
+    if (foundInList) {
+      setEnquiry(foundInList);
+      setError(null);
     }
 
-    // Fallback: fetch from API if not in list
-    const fetchEnquiry = async () => {
+    // Step 2: Always do a background server fetch to get fresh data with products
+    // This runs whether or not we found in local list
+    const fetchFresh = async () => {
       try {
         const data = await api.getEnquiryById(enquiryId);
-        if (!cancelled) setEnquiry(data);
+        if (!cancelled && data) {
+          // Ensure products is always an array
+          setEnquiry({ ...data, products: Array.isArray(data.products) ? data.products : [] });
+          setError(null);
+        }
       } catch (err) {
-        if (!cancelled) setError('Failed to load details.');
+        // Only show error if we have NO data at all from local list
+        if (!cancelled && !foundInList) {
+          setError('Failed to load details. Please check your internet connection.');
+        }
+        // If we already showed data from local list, silently ignore the API error
       }
     };
-    fetchEnquiry();
+    fetchFresh();
+
     return () => { cancelled = true; };
-  }, [enquiryId, enquiries]);
+  }, [enquiryId]); // Only re-run when enquiryId changes, NOT when enquiries list updates
+
 
   const openLightbox  = useCallback((src) => setLightbox(src), []);
   const closeLightbox = useCallback(() => setLightbox(null), []);

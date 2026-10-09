@@ -1,4 +1,4 @@
-const CACHE_NAME = 'enquiry-app-cache-v7';
+const CACHE_NAME = 'enquiry-app-cache-v8';
 const URLS_TO_CACHE = [
   '/',
   '/index.html',

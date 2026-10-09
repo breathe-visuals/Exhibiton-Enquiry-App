@@ -511,8 +511,9 @@ function getEnquiries() {
   
   try {
     var jsonString = JSON.stringify(result);
+    // Cache for 60 seconds only — so new products show up quickly after save
     if (jsonString.length < 100000) {
-      cache.put('enquiries_data', jsonString, 900);
+      cache.put('enquiries_data', jsonString, 60);
     }
   } catch(e) {}
   
