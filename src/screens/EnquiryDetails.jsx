@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { FileDown, ZoomIn, Trash2, RefreshCw, Edit, MessageCircle } from 'lucide-react';
+import { FileDown, ZoomIn, Trash2, RefreshCw, Edit } from 'lucide-react';
 import * as api from '../services/api';
 import Header from '../components/Header';
 import ImageLightbox from '../components/ImageLightbox';
@@ -22,53 +22,33 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-  // Step 1: Hydrate from local list. This reacts if 'enquiries' loads late (hard refresh)
-  useEffect(() => {
-    if (enquiries && enquiries.length > 0) {
-      const foundInList = enquiries.find(e => String(e.enquiry_id) === String(enquiryId));
-      if (foundInList) {
-        setEnquiry(foundInList);
-        setError(null);
-      }
-    }
-  }, [enquiryId, enquiries]);
-
-  // Step 2: Fetch fresh data from server exactly once per enquiryId
   useEffect(() => {
     let cancelled = false;
-    const fetchFresh = async () => {
+
+    // First try to find from already-loaded list (instant)
+    if (enquiries && enquiries.length > 0) {
+      const found = enquiries.find(e => e.enquiry_id === enquiryId);
+      if (found) {
+        setEnquiry(found);
+        return; // no network fetch needed
+      }
+    }
+
+    // Fallback: fetch from API if not in list
+    const fetchEnquiry = async () => {
       try {
         const data = await api.getEnquiryById(enquiryId);
-        if (!cancelled && data) {
-          setEnquiry({ ...data, products: Array.isArray(data.products) ? data.products : [] });
-          setError(null);
-        }
+        if (!cancelled) setEnquiry(data);
       } catch (err) {
-        if (!cancelled) {
-          // We only want to set an error if we NEVER found it locally either
-          setEnquiry(prev => {
-            if (!prev) setError('Failed to load details. Please check your internet connection.');
-            return prev;
-          });
-        }
+        if (!cancelled) setError('Failed to load details.');
       }
     };
-    fetchFresh();
+    fetchEnquiry();
     return () => { cancelled = true; };
-  }, [enquiryId]);
-
+  }, [enquiryId, enquiries]);
 
   const openLightbox  = useCallback((src) => setLightbox(src), []);
   const closeLightbox = useCallback(() => setLightbox(null), []);
-
-  const handleWhatsApp = () => {
-    let phone = enquiry.mobile.replace(/\D/g, ''); // strip non-digits
-    if (phone.length === 10) phone = '91' + phone; // Default to India if 10 digits
-
-    const text = `Hi ${enquiry.customer_name},\n\nIt was great meeting you at ${enquiry.event_name}! Please find the requested details attached.`;
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
-  };
 
   const handleDelete = async () => {
     if (!window.confirm('Delete this enquiry? This cannot be undone.')) return;
@@ -269,14 +249,6 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
 
       {/* Action buttons */}
       <div style={styles.actionBar}>
-        <button
-          className="btn"
-          onClick={handleWhatsApp}
-          style={{ ...styles.exportBtn, backgroundColor: '#25D366', color: '#fff', border: '1px solid #25D366' }}
-        >
-          <MessageCircle size={20} />
-          WhatsApp
-        </button>
         <button
           className="btn btn-primary"
           onClick={() => exportToPDF(enquiry)}
@@ -517,7 +489,6 @@ const styles = {
   actionBar: {
     marginTop: '24px',
     display: 'flex',
-    flexWrap: 'wrap',
     gap: '12px',
   },
   exportBtn: {

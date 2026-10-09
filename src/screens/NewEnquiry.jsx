@@ -42,7 +42,7 @@ const NewEnquiry = ({ navigateTo, setIsDirty, onSave, editingEnquiryId, enquirie
   // Load existing data if editing
   useEffect(() => {
     if (editingEnquiryId && enquiries) {
-      const existing = enquiries.find(e => String(e.enquiry_id) === String(editingEnquiryId));
+      const existing = enquiries.find(e => e.enquiry_id === editingEnquiryId);
       if (existing) {
         setFormData(existing);
         setProducts(existing.products || []);
