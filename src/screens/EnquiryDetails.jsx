@@ -27,7 +27,7 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
 
     // First try to find from already-loaded list (instant)
     if (enquiries && enquiries.length > 0) {
-      const found = enquiries.find(e => e.enquiry_id === enquiryId);
+      const found = enquiries.find(e => String(e.enquiry_id) === String(enquiryId));
       if (found) {
         setEnquiry(found);
         return; // no network fetch needed
