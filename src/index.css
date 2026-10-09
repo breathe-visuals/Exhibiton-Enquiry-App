@@ -39,11 +39,21 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  max-width: 600px; /* Mobile-first, constrained on desktop */
+  height: 100dvh; /* Use dynamic viewport height for mobile browsers */
+  width: 100%;
+  max-width: 100%; 
   margin: 0 auto;
   background-color: var(--bg-color);
   position: relative;
   overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .app-container {
+    max-width: 600px;
+    height: 100vh;
+    box-shadow: 0 0 20px rgba(0,0,0,0.1);
+  }
 }
 
 .main-content {
