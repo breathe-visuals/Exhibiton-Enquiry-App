@@ -2,6 +2,32 @@ import React from 'react';
 import { Camera, X, ZoomIn } from 'lucide-react';
 
 const ImageCaptureSlot = ({ label, url, onCapture, onRemove, onZoom }) => {
+  
+  // Helper to trigger a download of the captured photo so it saves to gallery/downloads
+  const handleCaptureWrapper = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      
+      // We pass the event up to the parent to process and compress
+      onCapture(e);
+
+      // Trigger automatic save to device
+      const objectUrl = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = `captured_${label.replace(/\s+/g, '_').toLowerCase()}_${Date.now()}.jpg`;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      
+      // Cleanup
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(objectUrl);
+      }, 1000);
+    }
+  };
+
   return (
     <div style={styles.cardSlot}>
       <div style={styles.cardSlotLabel}>{label}</div>
@@ -28,12 +54,12 @@ const ImageCaptureSlot = ({ label, url, onCapture, onRemove, onZoom }) => {
       ) : (
         <label style={styles.uploadBtn}>
           <Camera size={24} />
-          <span>Capture {label}</span>
+          <span>Camera / Gallery</span>
           <input
             type="file"
             accept="image/*"
             style={{ display: 'none' }}
-            onChange={onCapture}
+            onChange={handleCaptureWrapper}
           />
         </label>
       )}

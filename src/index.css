@@ -26,6 +26,11 @@
   padding: 0;
 }
 
+html, body {
+  overflow-x: hidden; /* Absolutely prevent horizontal scroll on mobile */
+  width: 100%;
+}
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background-color: var(--bg-color);

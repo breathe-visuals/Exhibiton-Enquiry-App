@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { FileDown, ZoomIn, Trash2, RefreshCw, Edit } from 'lucide-react';
+import { FileDown, ZoomIn, Trash2, RefreshCw, Edit, MessageCircle } from 'lucide-react';
 import * as api from '../services/api';
 import Header from '../components/Header';
 import ImageLightbox from '../components/ImageLightbox';
@@ -49,6 +49,15 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
 
   const openLightbox  = useCallback((src) => setLightbox(src), []);
   const closeLightbox = useCallback(() => setLightbox(null), []);
+
+  const handleWhatsApp = () => {
+    let phone = enquiry.mobile.replace(/\D/g, ''); // strip non-digits
+    if (phone.length === 10) phone = '91' + phone; // Default to India if 10 digits
+
+    const text = `Hi ${enquiry.customer_name},\n\nIt was great meeting you at ${enquiry.event_name}! Please find the requested details attached.`;
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
 
   const handleDelete = async () => {
     if (!window.confirm('Delete this enquiry? This cannot be undone.')) return;
@@ -249,6 +258,14 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
 
       {/* Action buttons */}
       <div style={styles.actionBar}>
+        <button
+          className="btn"
+          onClick={handleWhatsApp}
+          style={{ ...styles.exportBtn, backgroundColor: '#25D366', color: '#fff', border: '1px solid #25D366' }}
+        >
+          <MessageCircle size={20} />
+          WhatsApp
+        </button>
         <button
           className="btn btn-primary"
           onClick={() => exportToPDF(enquiry)}
@@ -489,6 +506,7 @@ const styles = {
   actionBar: {
     marginTop: '24px',
     display: 'flex',
+    flexWrap: 'wrap',
     gap: '12px',
   },
   exportBtn: {

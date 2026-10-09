@@ -362,9 +362,15 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
                 <div style={styles.headerRow}>
                   <h3 style={styles.customerName}>
                     {enquiry.customer_name}
-                    {isOffline && (
-                      <span title="Stored offline, waiting to sync" style={{ marginLeft: '6px', color: '#f59e0b', display: 'inline-flex', verticalAlign: 'middle' }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                    {isOffline ? (
+                      <span title="Stored offline, waiting to sync" style={{ marginLeft: '6px', color: '#f59e0b', display: 'inline-flex', verticalAlign: 'middle', backgroundColor: '#fef3c7', padding: '2px 6px', borderRadius: '12px', fontSize: '0.65rem', alignItems: 'center', gap: '4px' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                        Pending
+                      </span>
+                    ) : (
+                      <span title="Synced to Cloud" style={{ marginLeft: '6px', color: '#16a34a', display: 'inline-flex', verticalAlign: 'middle', backgroundColor: '#dcfce7', padding: '2px 6px', borderRadius: '12px', fontSize: '0.65rem', alignItems: 'center', gap: '4px' }}>
+                        <CheckSquare size={12} strokeWidth={3} />
+                        Synced
                       </span>
                     )}
                   </h3>
