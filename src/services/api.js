@@ -44,13 +44,16 @@ export const processOfflineQueue = async () => {
       await localDb.removeSyncTask(req.id);
       successCount++;
     } catch (err) {
-      // Keep it in DB to retry later, maybe increment retry count
+      // Keep it in DB to retry later, increment retry count
       req.retryCount = (req.retryCount || 0) + 1;
       await localDb.updateSyncTask(req);
     }
   }
 
-  window.dispatchEvent(new CustomEvent('offline-queue-updated'));
+  if (successCount > 0) {
+    // Notify App.jsx to re-fetch fresh data so Pending→Synced badges update
+    window.dispatchEvent(new CustomEvent('offline-queue-updated', { detail: { synced: successCount } }));
+  }
   return successCount;
 };
 

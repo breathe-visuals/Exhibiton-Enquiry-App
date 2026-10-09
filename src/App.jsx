@@ -17,24 +17,37 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Refresh the full enquiries list from the server and update local state+cache
+  const refreshFromServer = useCallback(async () => {
+    try {
+      const data = await api.getEnquiries();
+      const freshData = Array.isArray(data) ? data : [];
+      setEnquiries(freshData);
+      localDb.saveLocalEnquiries(freshData).catch(e => console.error(e));
+    } catch (err) {
+      console.warn('Background refresh failed:', err.message);
+    }
+  }, []);
+
   // SWR: Hydrate immediately from localDb, then fetch fresh
   useEffect(() => {
     let cancelled = false;
     
     const initData = async () => {
-      // 1. Instantly load from IndexedDB
+      // 1. Instantly load from IndexedDB - ensure products is always an array
       let hasLocalData = false;
       try {
         const cachedData = await localDb.getLocalEnquiries();
         if (cachedData && cachedData.length > 0 && !cancelled) {
-          setEnquiries(cachedData);
+          // Sanitize: ensure products is always an array (prevents 0-products crash)
+          const sanitized = cachedData.map(e => ({ ...e, products: Array.isArray(e.products) ? e.products : [] }));
+          setEnquiries(sanitized);
           hasLocalData = true;
           setIsLoading(false); // UI instantly unblocks
         }
       } catch(e) { console.error(e); }
 
       // 2. Fetch fresh from network (background)
-      // Only show spinner if we don't have cached data
       if (!hasLocalData && !cancelled) setIsLoading(true);
       setError(null);
       try {
@@ -56,6 +69,15 @@ function App() {
     initData();
     return () => { cancelled = true; };
   }, []);
+
+  // Listen for offline queue sync events → re-fetch so Pending → Synced badges update
+  useEffect(() => {
+    const handleQueueUpdate = () => {
+      if (navigator.onLine) refreshFromServer();
+    };
+    window.addEventListener('offline-queue-updated', handleQueueUpdate);
+    return () => window.removeEventListener('offline-queue-updated', handleQueueUpdate);
+  }, [refreshFromServer]);
 
   // 3. Persist local state to IndexedDB whenever it changes
   useEffect(() => {
@@ -92,12 +114,12 @@ function App() {
       delete cleanPayload._removedImageUrls;
 
       api.createEnquiry(cleanPayload)
-        .then(result => api.getEnquiryById(result.enquiry_id))
-        .then(created => {
-          setEnquiries(prev => {
-            const filtered = prev.filter(e => e.enquiry_id !== tempId);
-            return [created, ...filtered];
-          });
+        .then(async (result) => {
+          if (result && !result._queued) {
+            // Sync succeeded – fetch the full list so the real ID + products appear
+            await refreshFromServer();
+          }
+          // If queued (offline), keep temp entry; offline-queue-updated event fires on reconnect
         })
         .catch(err => {
           console.log('Background sync error (likely queued):', err);
@@ -122,14 +144,12 @@ function App() {
       delete cleanPayload._removedImageUrls;
 
       api.updateEnquiry(cleanPayload.enquiry_id, cleanPayload)
-        .then(() => {
-          if (removedUrls.length > 0) {
-            api.deleteImages(removedUrls).catch(e => console.error(e));
+        .then(async (result) => {
+          if (removedUrls.length > 0) api.deleteImages(removedUrls).catch(e => console.error(e));
+          if (result && !result._queued) {
+            // Sync succeeded – refresh full list so products are always accurate
+            await refreshFromServer();
           }
-          return api.getEnquiryById(cleanPayload.enquiry_id);
-        })
-        .then(updated => {
-          setEnquiries(prev => prev.map(e => e.enquiry_id === updated.enquiry_id ? updated : e));
         })
         .catch(err => {
           console.log('Background edit sync error (likely queued):', err);
