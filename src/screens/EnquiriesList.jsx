@@ -329,6 +329,7 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
         {filteredEnquiries.slice(0, visibleCount).map(enquiry => {
           const isSelected  = selected.has(enquiry.enquiry_id);
           const statusStyle = STATUS_COLORS[enquiry.status] || STATUS_COLORS['New'];
+          const isOffline = enquiry.enquiry_id && enquiry.enquiry_id.startsWith('ENQ-');
           return (
             <div
               key={enquiry.enquiry_id}
@@ -359,7 +360,14 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={styles.headerRow}>
-                  <h3 style={styles.customerName}>{enquiry.customer_name}</h3>
+                  <h3 style={styles.customerName}>
+                    {enquiry.customer_name}
+                    {isOffline && (
+                      <span title="Stored offline, waiting to sync" style={{ marginLeft: '6px', color: '#f59e0b', display: 'inline-flex', verticalAlign: 'middle' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                      </span>
+                    )}
+                  </h3>
                   {/* Status inline dropdown */}
                   <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
                     <select
@@ -588,6 +596,7 @@ const styles = {
   selectionBar: {
     display: 'flex',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: '12px',
     backgroundColor: '#eff6ff',
     border: '1px solid #bfdbfe',

@@ -122,14 +122,18 @@ const exportToPDF = (enquiry) => {
 </head>
 <body>
 
-  <div class="share-bar">
+  <div class="share-bar no-print">
+    <button class="share-btn" onclick="window.cleanupPdfView()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+      Back
+    </button>
     <button class="share-btn" onclick="handleShare()">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
       Share
     </button>
     <button class="print-btn" onclick="window.print()">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-      Save as PDF
+      Print / Save
     </button>
   </div>
 
@@ -229,7 +233,7 @@ const exportToPDF = (enquiry) => {
   document.head.appendChild(style);
   document.body.appendChild(printContainer);
 
-  // Function to cleanup after printing
+  // Function to cleanup after printing or clicking back
   const cleanup = () => {
     if (document.getElementById('print-mount')) {
       document.body.removeChild(printContainer);
@@ -238,12 +242,13 @@ const exportToPDF = (enquiry) => {
       document.head.removeChild(style);
     }
     window.removeEventListener('afterprint', cleanup);
+    delete window.cleanupPdfView;
   };
 
-  window.addEventListener('afterprint', cleanup);
+  // Expose it so the Back button can trigger it
+  window.cleanupPdfView = cleanup;
 
-  // Fallback cleanup in case afterprint doesn't fire (some mobile browsers)
-  setTimeout(cleanup, 60000); // Clean up after 1 min regardless
+  window.addEventListener('afterprint', cleanup);
 };
 
 export default exportToPDF;

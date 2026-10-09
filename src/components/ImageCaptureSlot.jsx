@@ -32,7 +32,6 @@ const ImageCaptureSlot = ({ label, url, onCapture, onRemove, onZoom }) => {
           <input
             type="file"
             accept="image/*"
-            capture="environment"
             style={{ display: 'none' }}
             onChange={onCapture}
           />

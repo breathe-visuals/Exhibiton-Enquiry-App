@@ -21,18 +21,21 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     
-    // 1. Instantly load from IndexedDB
-    localDb.getLocalEnquiries().then(cachedData => {
-      if (cachedData && cachedData.length > 0 && !cancelled) {
-        setEnquiries(cachedData);
-        setIsLoading(false); // UI instantly unblocks
-      }
-    }).catch(e => console.error(e));
+    const initData = async () => {
+      // 1. Instantly load from IndexedDB
+      let hasLocalData = false;
+      try {
+        const cachedData = await localDb.getLocalEnquiries();
+        if (cachedData && cachedData.length > 0 && !cancelled) {
+          setEnquiries(cachedData);
+          hasLocalData = true;
+          setIsLoading(false); // UI instantly unblocks
+        }
+      } catch(e) { console.error(e); }
 
-    // 2. Fetch fresh from network (background)
-    const fetchEnquiries = async () => {
+      // 2. Fetch fresh from network (background)
       // Only show spinner if we don't have cached data
-      if (enquiries.length === 0) setIsLoading(true);
+      if (!hasLocalData && !cancelled) setIsLoading(true);
       setError(null);
       try {
         const data = await api.getEnquiries();
@@ -42,14 +45,15 @@ function App() {
           localDb.saveLocalEnquiries(freshData).catch(e => console.error(e));
         }
       } catch (err) {
-        if (!cancelled && enquiries.length === 0) {
+        if (!cancelled && !hasLocalData) {
           setError(err.message || 'Failed to load enquiries. Please try again.');
         }
       } finally {
         if (!cancelled) setIsLoading(false);
       }
     };
-    fetchEnquiries();
+    
+    initData();
     return () => { cancelled = true; };
   }, []);
 
