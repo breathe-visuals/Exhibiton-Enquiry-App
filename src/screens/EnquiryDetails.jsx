@@ -22,41 +22,40 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // Step 1: Hydrate from local list. This reacts if 'enquiries' loads late (hard refresh)
+  useEffect(() => {
+    if (enquiries && enquiries.length > 0) {
+      const foundInList = enquiries.find(e => String(e.enquiry_id) === String(enquiryId));
+      if (foundInList) {
+        setEnquiry(foundInList);
+        setError(null);
+      }
+    }
+  }, [enquiryId, enquiries]);
+
+  // Step 2: Fetch fresh data from server exactly once per enquiryId
   useEffect(() => {
     let cancelled = false;
-
-    // Step 1: Find immediately from the in-memory list (instant render)
-    const foundInList = enquiries && enquiries.length > 0
-      ? enquiries.find(e => String(e.enquiry_id) === String(enquiryId))
-      : null;
-
-    if (foundInList) {
-      setEnquiry(foundInList);
-      setError(null);
-    }
-
-    // Step 2: Always do a background server fetch to get fresh data with products
-    // This runs whether or not we found in local list
     const fetchFresh = async () => {
       try {
         const data = await api.getEnquiryById(enquiryId);
         if (!cancelled && data) {
-          // Ensure products is always an array
           setEnquiry({ ...data, products: Array.isArray(data.products) ? data.products : [] });
           setError(null);
         }
       } catch (err) {
-        // Only show error if we have NO data at all from local list
-        if (!cancelled && !foundInList) {
-          setError('Failed to load details. Please check your internet connection.');
+        if (!cancelled) {
+          // We only want to set an error if we NEVER found it locally either
+          setEnquiry(prev => {
+            if (!prev) setError('Failed to load details. Please check your internet connection.');
+            return prev;
+          });
         }
-        // If we already showed data from local list, silently ignore the API error
       }
     };
     fetchFresh();
-
     return () => { cancelled = true; };
-  }, [enquiryId]); // Only re-run when enquiryId changes, NOT when enquiries list updates
+  }, [enquiryId]);
 
 
   const openLightbox  = useCallback((src) => setLightbox(src), []);
