@@ -329,7 +329,7 @@ const EnquiriesList = ({ navigateTo, enquiries, onDeleteEnquiries, onUpdateStatu
         {filteredEnquiries.slice(0, visibleCount).map(enquiry => {
           const isSelected  = selected.has(enquiry.enquiry_id);
           const statusStyle = STATUS_COLORS[enquiry.status] || STATUS_COLORS['New'];
-          const isOffline = enquiry.enquiry_id && enquiry.enquiry_id.startsWith('ENQ-');
+          const isOffline = enquiry.enquiry_id && enquiry.enquiry_id.startsWith('TEMP-');
           return (
             <div
               key={enquiry.enquiry_id}

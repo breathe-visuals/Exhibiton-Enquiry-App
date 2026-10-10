@@ -70,23 +70,26 @@ function App() {
    */
   const addEnquiryOptimistic = useCallback((enquiryData) => {
     return new Promise((resolve) => {
-      const tempId = `ENQ-${Date.now()}`;
+      const tempId = `TEMP-${Date.now()}`;
       const tempEnquiry = {
         ...enquiryData,
         enquiry_id: tempId,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         status: enquiryData.status || 'New',
+        products: enquiryData.products || [],
       };
 
       setEnquiries(prev => [tempEnquiry, ...prev]);
       resolve({ success: true, enquiry_id: tempId }); // Instantly unblock UI
 
-      // Background Sync
+      // Background Sync — strip internal fields before sending to backend
       const cleanPayload = {
         ...enquiryData,
         products: (enquiryData.products || []).map(({ _oldPhotoUrl, ...rest }) => rest),
       };
+      // Don't send temp ID to backend — let it generate a real one
+      delete cleanPayload.enquiry_id;
       
       const removedUrls = cleanPayload._removedImageUrls || [];
       delete cleanPayload._removedImageUrls;
@@ -101,6 +104,7 @@ function App() {
         })
         .catch(err => {
           console.log('Background sync error (likely queued):', err);
+          // Keep the temp entry in the list — it will be re-synced when online
         });
     });
   }, []);

@@ -27,20 +27,28 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
 
     // First try to find from already-loaded list (instant)
     if (enquiries && enquiries.length > 0) {
-      const found = enquiries.find(e => e.enquiry_id === enquiryId);
+      const found = enquiries.find(e => String(e.enquiry_id) === String(enquiryId));
       if (found) {
-        setEnquiry(found);
+        setEnquiry({ ...found, products: Array.isArray(found.products) ? found.products : [] });
         return; // no network fetch needed
       }
+    }
+
+    // Don't attempt API fetch for temp IDs (they haven't been saved yet)
+    if (enquiryId && enquiryId.startsWith('TEMP-')) {
+      setError('This enquiry is still syncing. Please wait a moment and try again.');
+      return;
     }
 
     // Fallback: fetch from API if not in list
     const fetchEnquiry = async () => {
       try {
         const data = await api.getEnquiryById(enquiryId);
-        if (!cancelled) setEnquiry(data);
+        if (!cancelled) {
+          setEnquiry({ ...data, products: Array.isArray(data.products) ? data.products : [] });
+        }
       } catch (err) {
-        if (!cancelled) setError('Failed to load details.');
+        if (!cancelled) setError('Failed to load details. Please check your connection and try again.');
       }
     };
     fetchEnquiry();
@@ -78,7 +86,13 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
   };
 
   if (error) return (
-    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--danger-color)' }}>{error}</div>
+    <div>
+      <Header title="Enquiry Details" showBack={true} onBack={() => navigateTo('enquiries')} />
+      <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--danger-color)' }}>
+        <p style={{ marginBottom: '16px' }}>⚠️ {error}</p>
+        <button className="btn btn-secondary" onClick={() => navigateTo('enquiries')}>← Back to List</button>
+      </div>
+    </div>
   );
   if (!enquiry) {
     return (
