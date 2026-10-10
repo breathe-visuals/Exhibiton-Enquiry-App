@@ -98,6 +98,19 @@ function doGet(e) {
     }
     if (endpoint === 'enquiries') return okResponse(getEnquiries());
     if (endpoint.startsWith('enquiry/')) return okResponse(getEnquiryById(endpoint.split('/')[1]));
+    // Debug: read raw Products sheet
+    if (endpoint === 'products') {
+      var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var ps = ss.getSheetByName('Products');
+      if (!ps) return errResponse('Products sheet not found');
+      var raw = ps.getDataRange().getValues();
+      return okResponse({ rows: raw.length, headers: raw[0], data: sheetToObjects(ps) });
+    }
+    // Debug: flush GAS cache
+    if (endpoint === 'flush-cache') {
+      invalidateCache();
+      return okResponse({ success: true, msg: 'Cache flushed' });
+    }
     return errResponse('Not found');
   } catch (error) {
     Logger.log('doGet error: ' + error.message);
@@ -544,18 +557,22 @@ function getEnquiryById(enquiryId) {
   // Only scan products sheet for matching enquiry_id
   var productsSheet = getOrCreateSheet(ss, 'Products');
   var pData    = productsSheet.getDataRange().getValues();
-  var pHeaders = pData[0];
+  var pHeaders = pData[0] || [];
   var pIdCol   = pHeaders.indexOf('enquiry_id');
   enquiry.products = [];
 
-  for (var j = 1; j < pData.length; j++) {
-    if (String(pData[j][pIdCol]) === String(enquiryId)) {
-      var p = {};
-      pHeaders.forEach(function(h, k) { p[h] = pData[j][k]; });
-      enquiry.products.push(p);
+  if (pIdCol === -1) {
+    Logger.log('WARNING: Products sheet missing enquiry_id column. Headers: ' + JSON.stringify(pHeaders));
+  } else {
+    for (var j = 1; j < pData.length; j++) {
+      if (String(pData[j][pIdCol]) === String(enquiryId)) {
+        var p = {};
+        pHeaders.forEach(function(h, k) { p[h] = pData[j][k]; });
+        enquiry.products.push(p);
+      }
     }
   }
-
+  Logger.log('getEnquiryById(' + enquiryId + '): found ' + enquiry.products.length + ' products');
   return enquiry;
 }
 

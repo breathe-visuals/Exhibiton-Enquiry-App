@@ -24,36 +24,39 @@ const EnquiryDetails = ({ navigateTo, enquiryId, enquiries, onDeleteEnquiry, onU
 
   useEffect(() => {
     let cancelled = false;
+    let hasCached = false;
 
-    // First try to find from already-loaded list (instant)
+    // Show cached data instantly (stale-while-revalidate)
     if (enquiries && enquiries.length > 0) {
       const found = enquiries.find(e => String(e.enquiry_id) === String(enquiryId));
       if (found) {
+        hasCached = true;
         setEnquiry({ ...found, products: Array.isArray(found.products) ? found.products : [] });
-        return; // no network fetch needed
+        // Don't return — still fetch fresh from API to pick up latest products
       }
     }
 
-    // Don't attempt API fetch for temp IDs (they haven't been saved yet)
-    if (enquiryId && enquiryId.startsWith('TEMP-')) {
-      setError('This enquiry is still syncing. Please wait a moment and try again.');
-      return;
-    }
+    // Skip API fetch for temp IDs not yet saved to backend
+    if (enquiryId && enquiryId.startsWith('TEMP-')) return;
 
-    // Fallback: fetch from API if not in list
-    const fetchEnquiry = async () => {
+    // Always fetch fresh from API (gets real products from sheet)
+    const fetchFresh = async () => {
       try {
         const data = await api.getEnquiryById(enquiryId);
         if (!cancelled) {
           setEnquiry({ ...data, products: Array.isArray(data.products) ? data.products : [] });
+          setError(null);
         }
       } catch (err) {
-        if (!cancelled) setError('Failed to load details. Please check your connection and try again.');
+        // Only show error if there is nothing cached to display
+        if (!cancelled && !hasCached) {
+          setError('Failed to load details. Check your connection.');
+        }
       }
     };
-    fetchEnquiry();
+    fetchFresh();
     return () => { cancelled = true; };
-  }, [enquiryId, enquiries]);
+  }, [enquiryId]); // only re-run when the ID changes, not on every enquiries update
 
   const openLightbox  = useCallback((src) => setLightbox(src), []);
   const closeLightbox = useCallback(() => setLightbox(null), []);
